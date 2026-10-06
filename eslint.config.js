@@ -22,6 +22,24 @@ const CORE_FORBIDDEN_GLOBALS = [
   'fetch',
 ];
 
+/** Core functions that write to a `SimState`; the render layer must not import them. */
+const CORE_MUTATORS = [
+  'step',
+  'restore',
+  'addBomb',
+  'removeBomb',
+  'applyPickup',
+  'movePlayer',
+  'fillArena',
+  'seedAllStreams',
+  'seedStream',
+  'nextU32',
+  'randInt',
+  'randPercent',
+  'randWeighted',
+  'runReplay',
+];
+
 /** Project convention: named exports only (see CLAUDE.md). */
 const NO_DEFAULT_EXPORT = {
   selector: 'ExportDefaultDeclaration',
@@ -120,6 +138,33 @@ export default tseslint.config(
             {
               regex: '^(\\.\\./)+(game|render|input|audio|ui|platform|i18n|content|net)(/|$)',
               message: 'src/core must not import from outer layers.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // src/render only reads core state (CLAUDE.md). Mirrored by tests/unit/render/readOnly.test.ts;
+    // the renderer also only sees the state as `ReadonlySimState` (type-level guard).
+    files: ['src/render/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['@capacitor/*', '@revenuecat/*'],
+              message: 'Import native APIs via src/platform instead.',
+            },
+            {
+              regex: '^(\\.\\./)+core/',
+              message: 'Import the core through its public index (../core).',
+            },
+            {
+              regex: '^(\\.\\./)+core$',
+              importNames: CORE_MUTATORS,
+              message: 'src/render must never mutate core state.',
             },
           ],
         },

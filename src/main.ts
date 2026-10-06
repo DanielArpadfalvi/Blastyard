@@ -1,5 +1,6 @@
 import { h, render } from 'preact';
 import './ui/styles.css';
+import { startArenaView, wantsArenaView } from './game/arenaDevView';
 import { getLanguage, onLanguageChange } from './i18n';
 import { createStage } from './render/stage';
 import { App } from './ui/App';
@@ -13,7 +14,16 @@ async function boot(): Promise<void> {
   };
   syncLang();
   onLanguageChange(syncLang);
-  await createStage(stage);
+  const query = new URLSearchParams(location.search);
+  if (query.has('test') && query.has('input')) {
+    // Standalone touch-input harness for e2e and device tests (no renderer / game loop).
+    const { mountInputTestPage } = await import('./input/testPage');
+    mountInputTestPage(ui, location.search);
+    return;
+  }
+  const app = await createStage(stage);
+  // T2.1 renderer dev/test view (`?test` or `?view=arena`): a seeded match with scripted inputs.
+  if (wantsArenaView(location.search)) startArenaView(app, location.search);
   render(h(App, {}), ui);
 }
 

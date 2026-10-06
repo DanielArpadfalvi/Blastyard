@@ -96,11 +96,15 @@ Kieséskor a felvett erősítők legfeljebb 4 db-a szétszóródik szabad cellá
   - **„Négy sarok” (3–4 fő; tableten ajánlott, telefonon is működik, de szoros):** mindkét oldalsáv kettéosztva →
     4 sarokzóna (telefonon ≈ 44 × 34 mm, tableten ≈ 45 × 60 mm). Egy játékos = egy kéz = **egyujjas vezérlés**
     (lásd 1.4). A sarok-játékosok a hosszú oldalak mentén ülnek, a sarkokba nyúlnak be.
-- **Ülés-tájolás:** minden zónának van egy „előre” iránya (0/90/180/270°); a karmozdulat vektorát ezzel forgatjuk
-  világkoordinátába, így mindenkinek az „előre” = tőle elfelé. Alapértékek: szemtől szemben → az aréna közepe felé;
-  sarkok → a legközelebbi hosszú oldaltól befelé. A lobbyban a zóna nyíl-ikonjára koppintva 90°-onként állítható.
-  A zónában minden szöveg/HUD (név, erősítők, „KÉSZ?”) a játékos felé fordul. A felülnézetes, kerek karakterek
-  és a forma-alapú csempék bármelyik irányból olvashatók.
+- **Ülés-tájolás:** minden zónának van egy „előre” iránya (0/90/180/270°). A lebegő kar vektorát **nem** forgatjuk:
+  az ujj a képernyőn mozog, és a képernyő = aréna-tér, így a „tőle elfelé” húzás bármelyik oldalról a Puffot is
+  tőle elfelé viszi (forgatással az oldalt ülők 90°-kal rossz irányba mennének). A tájolás a zóna ülés-relatív
+  elrendezését adja (kar-rész a játékos bal 55%-a, bomba gomb a jobb alsó negyede, balkezes csere), és a relatív
+  eszközöket (billentyűzet, gamepad, fix D-pad) forgatja a játékos keretéből világkoordinátába.
+  Alapértékek: szemtől szemben → az aréna közepe felé; sarkok → a legközelebbi hosszú oldaltól befelé.
+  A lobbyban a zóna nyíl-ikonjára koppintva 90°-onként állítható. A zónában minden szöveg/HUD (név, erősítők,
+  „KÉSZ?”) a játékos felé fordul. A felülnézetes, kerek karakterek és a forma-alapú csempék bármelyik irányból
+  olvashatók.
 - **Érintés-hozzárendelés:** egy érintés ahhoz a zónához tartozik, ahol **elkezdődött**, egészen a felengedésig
   (akkor is, ha átcsúszik). A zónák közt 4 mm holt sáv; az aréna fölötti érintéseket figyelmen kívül hagyjuk
   (tenyér-elutasítás). A zónák a képernyő szélétől a safe area + **8 mm** beljebb kezdődnek (rendszer-gesztusok).
@@ -125,7 +129,8 @@ Mértékegység: dp (CSS px), mm a fizikai méretre (≈ 6,3 dp/mm feltételezve
   Ha az ujj **60 dp**-nél messzebb húz, a kar középpontja utánamegy (nincs „kifutás”). Felengedés = megállás.
 - **Bomba gomb (jobb):** látható átmérő **72 dp**, érintési terület **96 dp**, a zóna jobb alsó negyedében,
   hüvelykujj-ívben. Lenyomás-élre reagál (nem felengedésre). Ha a lerakás épp nem lehetséges, **6 tickig pufferel**.
-- Opció: **fix D-pad** a lebegő kar helyett; **balkezes csere** (kar jobbra, gomb balra); zónaméret-csúszka (80–120%).
+- Opció: **fix D-pad** a lebegő kar helyett (a játékos felé forgatva rajzolva, ezért ennek irányait az ülés-tájolás
+  forgatja); **balkezes csere** (kar jobbra, gomb balra); zónaméret-csúszka (80–120%).
 
 **B) Egyujjas séma (négy sarok; egyedül opcióként is):**
 - Az egész zóna lebegő kar (ugyanazok a paraméterek).
