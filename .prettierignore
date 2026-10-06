@@ -1,0 +1,11 @@
+dist
+sourcemaps
+coverage
+test-results
+playwright-report
+package-lock.json
+docs
+CLAUDE.md
+README.md
+android
+ios

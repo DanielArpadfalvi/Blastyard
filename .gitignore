@@ -1,0 +1,11 @@
+node_modules
+dist
+sourcemaps
+coverage
+test-results
+playwright-report
+tests/e2e/__screenshots__
+.vite
+*.log
+.DS_Store
+.claude/worktrees/

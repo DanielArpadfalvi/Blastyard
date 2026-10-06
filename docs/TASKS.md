@@ -4,8 +4,8 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done (verified by orchestrator)
 Numbers referenced below (tick rate, fuse, speeds, sizes) are defined in `docs/PLAN.md` §1.
 
 ## M0 – Foundation
-- [ ] **T0.1 Scaffold** – Vite + TS strict, ESLint (flat config) + Prettier, Vitest, Playwright (Chromium from /opt/pw-browsers), PixiJS v8, Preact. Scripts per CLAUDE.md. Landscape, DPR-aware Pixi canvas filling the viewport + Preact overlay root; empty `src/{core,game,render,input,audio,ui,platform,i18n,content}`. ESLint rule forbidding `Math.random`, `Date.now`, `performance.now` and DOM/Pixi imports inside `src/core`. AC: `npm run check`, `npm run build`, `npm run test:e2e` (page loads, canvas exists, no console errors) pass; a deliberate `Math.random` in core fails lint.
-- [ ] **T0.2 CI** – `.github/workflows/ci.yml`: node 22, npm ci, check, build, e2e. AC: valid YAML, mirrors local commands, green on a push.
+- [x] **T0.1 Scaffold** – Vite + TS strict, ESLint (flat config) + Prettier, Vitest, Playwright (Chromium from /opt/pw-browsers), PixiJS v8, Preact. Scripts per CLAUDE.md. Landscape, DPR-aware Pixi canvas filling the viewport + Preact overlay root; empty `src/{core,game,render,input,audio,ui,platform,i18n,content}`. ESLint rule forbidding `Math.random`, `Date.now`, `performance.now` and DOM/Pixi imports inside `src/core`. AC: `npm run check`, `npm run build`, `npm run test:e2e` (page loads, canvas exists, no console errors) pass; a deliberate `Math.random` in core fails lint.
+- [x] **T0.2 CI** – `.github/workflows/ci.yml`: node 22, npm ci, check, build, e2e. AC: valid YAML, mirrors local commands, green on a push.
 
 ## M1 – Core simulation (`src/core`)
 - [ ] **T1.1 RNG + state model** – sfc32 with multiple named streams; struct-of-arrays state in typed arrays (grid, players, bombs, flames, pickups); `snapshot()/restore()`; FNV-1a state hash; `SIM_VERSION`. AC: unit tests; snapshot ≤ 4 KB for a 4-player state; restore→step gives identical hash to the uninterrupted run.
