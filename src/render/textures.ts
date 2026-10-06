@@ -524,3 +524,39 @@ export function bakeArenaTextures(renderer: Renderer): ArenaTextures {
     },
   };
 }
+
+// ---------------------------------------------------------------------------------------------
+// Touch controls (drawn in white, tinted per seat by the sprites)
+
+/** Logical size of the control textures. */
+export const CONTROL_TEX = 128;
+
+export interface ControlTextures {
+  /** Thin white ring touching the texture edge. */
+  readonly ring: Texture;
+  /** Filled white disc touching the texture edge. */
+  readonly disc: Texture;
+  /** Stick knob: white disc with a dark rim. */
+  readonly knob: Texture;
+  destroy(): void;
+}
+
+/** Bakes the touch-control textures once. */
+export function bakeControlTextures(renderer: Renderer): ControlTextures {
+  const R = CONTROL_TEX / 2;
+  const ring = new Graphics().circle(R, R, R - 4).stroke({ width: 6, color: 0xffffff });
+  const disc = new Graphics().circle(R, R, R - 1).fill(0xffffff);
+  const knob = new Graphics()
+    .circle(R, R, R - 6)
+    .fill(0xffffff)
+    .stroke({ width: 8, color: P.OUTLINE, alpha: 0.6 });
+  const all = [ring, disc, knob].map((g) => bake(renderer, g, CONTROL_TEX, CONTROL_TEX));
+  return {
+    ring: all[0] as Texture,
+    disc: all[1] as Texture,
+    knob: all[2] as Texture,
+    destroy(): void {
+      for (const t of all) t.destroy(true);
+    },
+  };
+}

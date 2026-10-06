@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -29,20 +29,26 @@ const RULES: Rule[] = [
     pattern:
       /\bfrom\s+['"](pixi\.js|@pixi\/|preact|@capacitor\/)|\bimport\s*\(\s*['"](pixi\.js|@pixi\/|preact|@capacitor\/)|\bimport\s+['"](pixi\.js|@pixi\/|preact|@capacitor\/)/,
   },
-  {
-    name: 'outer-layer import',
-    pattern: /['"](\.\.\/)+(game|render|input|audio|ui|platform|i18n|content|net)(\/|['"])/,
-  },
 ];
+
+/** Relative import leaving src/core from a file `depth` folders below it. */
+function outerLayerImport(depth: number): RegExp {
+  return new RegExp(
+    `['"](\\.\\./){${depth + 1},}(game|render|input|audio|ui|platform|i18n|content|net)(/|['"])`,
+  );
+}
 
 /** Removes comments so documentation may mention forbidden APIs. Strings are kept. */
 function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"\\])\/\/.*$/gm, '$1');
 }
 
-export function findViolations(source: string): string[] {
+/** `depth`: folder depth of the file below src/core (0 = directly in it). */
+export function findViolations(source: string, depth = 0): string[] {
   const code = stripComments(source);
-  return RULES.filter((r) => r.pattern.test(code)).map((r) => r.name);
+  const found = RULES.filter((r) => r.pattern.test(code)).map((r) => r.name);
+  if (outerLayerImport(depth).test(code)) found.push('outer-layer import');
+  return found;
 }
 
 function listTsFiles(dir: string): string[] {
@@ -72,6 +78,11 @@ describe('core purity', () => {
       'pixi/preact/capacitor import',
     );
     expect(findViolations('window.addEventListener("x", f);')).toContain('DOM global');
+    // One folder deeper (src/core/ai) `../input` stays inside the core; `../../input` does not.
+    expect(findViolations("import { Dir } from '../input';", 1)).toEqual([]);
+    expect(findViolations("import { zones } from '../../input/zones';", 1)).toContain(
+      'outer-layer import',
+    );
   });
 
   it('accepts clean code and ignores comments', () => {
@@ -88,7 +99,10 @@ describe('core purity', () => {
   it('src/core contains no forbidden APIs or imports', () => {
     const files = listTsFiles(CORE_DIR);
     const problems = files.flatMap((file) =>
-      findViolations(readFileSync(file, 'utf8')).map((v) => `${relative(CORE_DIR, file)}: ${v}`),
+      findViolations(
+        readFileSync(file, 'utf8'),
+        relative(CORE_DIR, file).split(sep).length - 1,
+      ).map((v) => `${relative(CORE_DIR, file)}: ${v}`),
     );
     expect(problems).toEqual([]);
   });

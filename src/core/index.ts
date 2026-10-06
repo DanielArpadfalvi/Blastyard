@@ -145,3 +145,4 @@ export {
   type Replay,
   type ReplayResult,
 } from './replay';
+export { ESCAPE_MARGIN, WANDER_EPOCH, wanderHash, wanderInput } from './ai/wander';

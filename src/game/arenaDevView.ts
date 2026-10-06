@@ -1,5 +1,5 @@
 /**
- * Dev / test arena view (T2.1): `?test` or `?view=arena` runs a match with idle or scripted
+ * Dev / test arena view (T2.1): `?test` (without `game`) or `?view=arena` runs a match with idle or scripted
  * inputs and draws it, so the renderer can be looked at and e2e-tested before the real game flow
  * exists. Query parameters:
  *
@@ -76,7 +76,7 @@ declare global {
 /** True when the query asks for the arena dev / test view. */
 export function wantsArenaView(search: string): boolean {
   const q = new URLSearchParams(search);
-  return q.get('view') === 'arena' || (q.has('test') && !q.has('input'));
+  return q.get('view') === 'arena' || (q.has('test') && !q.has('input') && !q.has('game'));
 }
 
 function intParam(q: URLSearchParams, name: string, fallback: number, min: number, max: number) {

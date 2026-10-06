@@ -46,6 +46,14 @@ const NO_DEFAULT_EXPORT = {
   message: 'Use named exports.',
 };
 
+/** Relative imports leaving src/core (`depth` = folder depth of the importing file below it). */
+function outerLayerPattern(depth) {
+  return {
+    regex: `^(\\.\\./){${depth},}(game|render|input|audio|ui|platform|i18n|content|net)(/|$)`,
+    message: 'src/core must not import from outer layers.',
+  };
+}
+
 export default tseslint.config(
   {
     ignores: [
@@ -135,10 +143,33 @@ export default tseslint.config(
               ],
               message: 'src/core must not depend on rendering, UI or native layers.',
             },
+            outerLayerPattern(1),
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // One folder deeper (e.g. src/core/ai): `../input` is still inside the core.
+    files: ['src/core/*/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
             {
-              regex: '^(\\.\\./)+(game|render|input|audio|ui|platform|i18n|content|net)(/|$)',
-              message: 'src/core must not import from outer layers.',
+              group: [
+                'pixi.js',
+                'pixi.js/*',
+                '@pixi/*',
+                'preact',
+                'preact/*',
+                '@capacitor/*',
+                '@revenuecat/*',
+              ],
+              message: 'src/core must not depend on rendering, UI or native layers.',
             },
+            outerLayerPattern(2),
           ],
         },
       ],
