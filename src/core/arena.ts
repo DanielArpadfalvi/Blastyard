@@ -14,6 +14,7 @@ import {
   CELL_COUNT,
   GRID_H,
   GRID_W,
+  NO_OWNER,
   PICKUP_KIND_COUNT,
   Tile,
   cellIndex,
@@ -210,12 +211,15 @@ function spawnSignature(cells: Uint8Array, spawn: number): string {
   return Array.from(counts, (c) => c ?? 0).join(',');
 }
 
-function validWeights(weights: readonly number[]): boolean {
-  return (
-    weights.length === PICKUP_KIND_COUNT &&
-    weights.every((w) => Number.isInteger(w) && w >= 0) &&
-    weights.some((w) => w > 0)
-  );
+function validWeights(weights: ArrayLike<number>): boolean {
+  if (weights.length !== PICKUP_KIND_COUNT) return false;
+  let sum = 0;
+  for (let i = 0; i < weights.length; i++) {
+    const w = weights[i] as number;
+    if (!Number.isInteger(w) || w < 0) return false;
+    sum += w;
+  }
+  return sum > 0;
 }
 
 /**
@@ -297,14 +301,18 @@ export function loadArena(def: ArenaDef): ParsedArena {
 export interface ArenaFillOptions {
   readonly crateDensity: number;
   readonly powerupChance: number;
-  readonly powerupWeights: readonly number[];
+  readonly powerupWeights: ArrayLike<number>;
 }
 
 /**
  * Writes the static layout into `state.tiles`, then fills crates and hidden power-ups from the
- * state's ARENA / LOOT streams. Clears open pickups and flames.
+ * state's ARENA / LOOT streams. Clears open pickups, grace timers and flames.
  */
-export function fillArena(state: SimState, parsed: ParsedArena, opts: ArenaFillOptions): void {
+export function fillArena(
+  state: SimState,
+  parsed: Pick<ParsedArena, 'cells'>,
+  opts: ArenaFillOptions,
+): void {
   if (!validWeights(opts.powerupWeights)) throw new RangeError('fillArena: invalid weights');
   const { cells } = parsed;
   const candidates: number[] = [];
@@ -324,6 +332,7 @@ export function fillArena(state: SimState, parsed: ParsedArena, opts: ArenaFillO
   state.pickup.fill(0);
   state.pickupGrace.fill(0);
   state.flame.fill(0);
+  state.flameOwner.fill(NO_OWNER);
 
   // Exactly round(density% × candidates) crates via a seeded partial Fisher–Yates shuffle.
   const crateCount = Math.floor((candidates.length * opts.crateDensity + 50) / 100);

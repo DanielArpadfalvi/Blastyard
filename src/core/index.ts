@@ -17,6 +17,7 @@ export {
 } from './rng';
 export {
   Ability,
+  BombFlag,
   CELL_COUNT,
   GRID_H,
   GRID_W,
@@ -25,9 +26,11 @@ export {
   MAX_BOMBS,
   MAX_SEATS,
   NO_OWNER,
+  NO_SIDE,
   PICKUP_KIND_COUNT,
   Phase,
   Pickup,
+  RuleFlag,
   STATE_BYTES,
   TILE,
   Tile,
@@ -38,6 +41,7 @@ export {
   isSeatActive,
   playerCell,
   restore,
+  sideOf,
   snapshot,
   snapshotInto,
   stateHash,
@@ -79,7 +83,22 @@ export {
   type LayoutCellType,
   type ParsedArena,
 } from './arena';
-export { addBomb, bombAt, bombCount, bombsOwnedBy, canPassBomb, removeBomb } from './bombs';
+export {
+  BOMB_BUFFER_TICKS,
+  CHAIN_DELAY,
+  FLAME_TICKS,
+  FUSE_TICKS,
+  PICKUP_GRACE,
+  addBomb,
+  bombAt,
+  bombCount,
+  bombsInUse,
+  bombsOwnedBy,
+  canPassBomb,
+  removeBomb,
+} from './bombs';
+export { EventKind, type EventKindId, type SimEvent } from './events';
+export { MAX_BOMB_CAPACITY, MAX_RANGE, applyPickup } from './powerups';
 export {
   BASE_SPEED,
   CORNER_ASSIST,
@@ -90,11 +109,39 @@ export {
   playerSpeed,
 } from './movement';
 export {
+  CHAOS_RULES,
+  CLASSIC_RULES,
   DEFAULT_RULES,
-  MAX_BOMB_CAPACITY,
-  MAX_RANGE,
-  createState,
+  FAST_RULES,
+  RULE_PRESETS,
+  WINS_TO_MATCH_OPTIONS,
   type CoreRules,
-  type MatchSetup,
-} from './setup';
-export { currentTick, step, type SimEvent } from './step';
+  type PresetId,
+  type Rules,
+} from './rules';
+export { chooseSpawns, createState, type MatchSetup } from './setup';
+export {
+  COUNTDOWN_TICKS,
+  GHOST_BOMB_COOLDOWN,
+  GHOST_BOMB_FUSE,
+  GHOST_BOMB_RANGE,
+  ROUND_END_TICKS,
+  SD_INTERVAL,
+  SD_PAUSE_AT,
+  SD_PAUSE_TICKS,
+  SPIRAL,
+} from './round';
+export { isMatchOver } from './match';
+export { currentTick, step } from './step';
+export {
+  ReplayRecorder,
+  appendInputs,
+  forEachTick,
+  rleDecode,
+  rleEncode,
+  rleLength,
+  runReplay,
+  type InputRLE,
+  type Replay,
+  type ReplayResult,
+} from './replay';

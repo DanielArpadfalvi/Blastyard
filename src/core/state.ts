@@ -64,10 +64,36 @@ export const Ability = {
   SHIELD: 8,
 } as const;
 
-/** Match phase (`hdr[Hdr.PHASE]`). */
+/** Match phase (`hdr[Hdr.PHASE]`). PLAYING is 0 so hand-built test states play immediately. */
 export const Phase = {
+  /** Round running: movement, bombs, flames, sudden death. */
   PLAYING: 0,
+  /** 3-2-1 before a round (`PHASE_TIMER` ticks left); nothing moves. */
+  COUNTDOWN: 1,
+  /** Round decided; flames fade out, next round after `PHASE_TIMER` ticks. */
+  ROUND_OVER: 2,
+  /** Match decided; the state is frozen (only the tick counter advances). */
+  MATCH_OVER: 3,
 } as const;
+
+/** Rule flag bits (`hdr[Hdr.RULE_FLAGS]`). */
+export const RuleFlag = {
+  SUDDEN_DEATH: 1,
+  GHOSTS: 2,
+  FRIENDLY_FIRE: 4,
+  TEAMS: 8,
+} as const;
+
+/** Bomb flag bits (`bombFlags`). */
+export const BombFlag = {
+  /** Exploding in the current tick (transient, cleared before `step` returns). */
+  EXPLODING: 1,
+  /** Dropped by a ghost (does not count against the owner's capacity). */
+  GHOST: 2,
+} as const;
+
+/** "No side" value for round / match winners (draw or undecided). */
+export const NO_SIDE = -1;
 
 /** Header slots (`hdr`, Int32). Append only. */
 export const Hdr = {
@@ -81,8 +107,30 @@ export const Hdr = {
   BOMB_COUNT: 5,
   /** Bit `s` set ⇔ seat `s` takes part in the match. */
   SEAT_MASK: 6,
+  /** Round number, 1-based (0 for hand-built states). */
+  ROUND: 7,
+  /** Playing ticks left before sudden death / time-out (only when ROUND_TICKS > 0). */
+  ROUND_TIME: 8,
+  /** Sudden-death blocks dropped so far (index into the spiral). */
+  SD_INDEX: 9,
+  /** Ticks until the next sudden-death block (0 = sudden death not running). */
+  SD_TIMER: 10,
+  /** Side that won the last round, `NO_SIDE` for a draw / undecided. */
+  ROUND_WINNER: 11,
+  /** Side that won the match, `NO_SIDE` while undecided. */
+  MATCH_WINNER: 12,
+  // Rules (constant for the whole match; part of the state so `step` needs nothing else).
+  RULE_FLAGS: 13,
+  /** Playing ticks per round before sudden death (0 = no time limit). */
+  ROUND_TICKS: 14,
+  WINS_TO_MATCH: 15,
+  START_BOMBS: 16,
+  START_RANGE: 17,
+  START_SPEED: 18,
+  POWERUP_CHANCE: 19,
+  CRATE_DENSITY: 20,
 } as const;
-const HDR_LENGTH = 7;
+const HDR_LENGTH = 21;
 
 export interface SimState {
   readonly buffer: ArrayBuffer;
@@ -112,6 +160,14 @@ export interface SimState {
   readonly jinx: Uint8Array;
   readonly jinxTicks: Uint16Array;
   readonly invuln: Uint16Array;
+  /** 1 while an eliminated seat haunts the outer wall (ghost revenge); position in px/py. */
+  readonly ghost: Uint8Array;
+  /** Ticks until the ghost may drop its next bomb. */
+  readonly ghostCd: Uint16Array;
+  /** Cell index of the seat's spawn (reused every round). */
+  readonly spawnCell: Uint8Array;
+  /** Rounds won, indexed by side (seat in free-for-all, team id in team mode). */
+  readonly wins: Uint8Array;
 
   // Bombs, compacted in creation order.
   readonly bombX: Int32Array;
@@ -136,6 +192,10 @@ export interface SimState {
   /** Remaining lethal flame ticks. */
   readonly flame: Uint8Array;
   readonly flameOwner: Uint8Array;
+  /** Static arena layout (`LayoutCell` per cell) used to rebuild the arena every round. */
+  readonly layout: Uint8Array;
+  /** Power-up weights per `Pickup` kind − 1 (resolved from arena / rules). */
+  readonly weights: Uint16Array;
 }
 
 type FieldKind = 'i32' | 'u32' | 'u16' | 'u8';
@@ -151,7 +211,9 @@ const FIELDS: ReadonlyArray<readonly [ViewName, FieldKind, number]> = [
   ['bombY', 'i32', MAX_BOMBS],
   ['jinxTicks', 'u16', MAX_SEATS],
   ['invuln', 'u16', MAX_SEATS],
+  ['ghostCd', 'u16', MAX_SEATS],
   ['bombFuse', 'u16', MAX_BOMBS],
+  ['weights', 'u16', PICKUP_KIND_COUNT],
   ['alive', 'u8', MAX_SEATS],
   ['moveDir', 'u8', MAX_SEATS],
   ['facing', 'u8', MAX_SEATS],
@@ -162,6 +224,9 @@ const FIELDS: ReadonlyArray<readonly [ViewName, FieldKind, number]> = [
   ['bombBuffer', 'u8', MAX_SEATS],
   ['team', 'u8', MAX_SEATS],
   ['jinx', 'u8', MAX_SEATS],
+  ['ghost', 'u8', MAX_SEATS],
+  ['spawnCell', 'u8', MAX_SEATS],
+  ['wins', 'u8', MAX_SEATS],
   ['bombOwner', 'u8', MAX_BOMBS],
   ['bombRange', 'u8', MAX_BOMBS],
   ['bombPass', 'u8', MAX_BOMBS],
@@ -173,6 +238,7 @@ const FIELDS: ReadonlyArray<readonly [ViewName, FieldKind, number]> = [
   ['pickupGrace', 'u8', CELL_COUNT],
   ['flame', 'u8', CELL_COUNT],
   ['flameOwner', 'u8', CELL_COUNT],
+  ['layout', 'u8', CELL_COUNT],
 ];
 
 const BYTES: Record<FieldKind, number> = { i32: 4, u32: 4, u16: 2, u8: 1 };
@@ -209,6 +275,8 @@ export function createEmptyState(): SimState {
   }
   const state = { buffer, bytes: new Uint8Array(buffer), ...views } as unknown as SimState;
   state.hdr[Hdr.VERSION] = SIM_VERSION;
+  state.hdr[Hdr.ROUND_WINNER] = NO_SIDE;
+  state.hdr[Hdr.MATCH_WINNER] = NO_SIDE;
   state.bombOwner.fill(NO_OWNER);
   state.flameOwner.fill(NO_OWNER);
   return state;
@@ -272,4 +340,11 @@ export function isSeatActive(state: SimState, seat: number): boolean {
 /** Seat's current tile (the tile containing its centre) as a cell index. */
 export function playerCell(state: SimState, seat: number): number {
   return cellIndex(toTile(state.px[seat] as number), toTile(state.py[seat] as number));
+}
+
+/** The side a seat plays for: its team in team mode, otherwise the seat itself. */
+export function sideOf(state: SimState, seat: number): number {
+  return ((state.hdr[Hdr.RULE_FLAGS] as number) & RuleFlag.TEAMS) !== 0
+    ? (state.team[seat] as number)
+    : seat;
 }

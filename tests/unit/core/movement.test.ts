@@ -20,7 +20,7 @@ import {
   type SimState,
 } from '../../../src/core';
 import { ARENA_GARDEN, CLASSIC_ARENAS } from '../../../src/content/arenas/classic';
-import { only, placeSeat, tinyArena } from './helpers';
+import { only, placeSeat, skipCountdown, tinyArena } from './helpers';
 
 const C = tileCenter; // C(1) = 384, C(2) = 640, C(3) = 896 …
 
@@ -279,6 +279,7 @@ describe('movement: invariants on real arenas', () => {
 
   it('garden spawns can walk their safe L', () => {
     const s = createState({ seed: 8, arena: ARENA_GARDEN, seats: [true, false, false, false] });
+    skipCountdown(s);
     s.tiles[cellIndex(3, 1)] = Tile.CRATE;
     s.tiles[cellIndex(1, 3)] = Tile.CRATE;
     hold(s, 0, encodeInput(Dir.RIGHT), 40);
