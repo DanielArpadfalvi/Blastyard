@@ -7,6 +7,8 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # A hung step must not hold the runner for the 6 h default.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -14,7 +16,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      # The apt step behind --with-deps sometimes hangs on the runner: cap each attempt, retry.
+      - name: Install Playwright Chromium
+        timeout-minutes: 20
+        run: |
+          for i in 1 2 3; do
+            timeout 300 npx playwright install --with-deps chromium && exit 0
+            echo "::warning::playwright install attempt $i failed or timed out, retrying"
+            sleep 10
+          done
+          exit 1
       - run: npm run check
       - run: npm run sim:bench
       - run: npm run build

@@ -1,0 +1,126 @@
+# CI autofix watcher: after any failed pipeline run, Claude reads the failure, fixes the cause and
+# pushes the fix to the branch that failed (the push re-runs the pipelines).
+#
+# One-time setup: Settings → Secrets and variables → Actions → add CLAUDE_CODE_OAUTH_TOKEN
+# (`claude setup-token`) or ANTHROPIC_API_KEY, and install the Claude GitHub app
+# (https://github.com/apps/claude) so its pushes trigger CI. Without a secret this watcher only
+# logs a warning.
+#
+# Loop guard: a failure on a commit that is itself an autofix commit ("[ci-autofix]") is not
+# auto-fixed again; it opens (or updates) an issue for a human instead.
+name: CI autofix
+
+on:
+  workflow_run:
+    workflows: [CI, Android, iOS, Pages]
+    types: [completed]
+
+permissions:
+  contents: write
+  actions: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  # One fix at a time per branch; a newer failure waits instead of racing the running fix.
+  group: ci-autofix-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  autofix:
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUN_ID: ${{ github.event.workflow_run.id }}
+      RUN_URL: ${{ github.event.workflow_run.html_url }}
+      WORKFLOW: ${{ github.event.workflow_run.name }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+      FAILED_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - id: gate
+        env:
+          HAS_KEY: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
+          HEAD_MSG: ${{ github.event.workflow_run.head_commit.message }}
+        run: |
+          tip=$(gh api "repos/$GITHUB_REPOSITORY/branches/$BRANCH" --jq .commit.sha 2>/dev/null || echo gone)
+          if [ "$tip" != "$FAILED_SHA" ]; then
+            echo "::notice::$BRANCH moved on (or was deleted) since the failed run; the newer commit gets its own run."
+            echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if printf '%s' "$HEAD_MSG" | grep -q '\[ci-autofix\]'; then
+            echo "loop=true" >> "$GITHUB_OUTPUT"
+            echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [ "$HAS_KEY" != "true" ]; then
+            echo "::warning::CI autofix: no CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY secret; not fixing $RUN_URL"
+            echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "go=true" >> "$GITHUB_OUTPUT"
+
+      - if: steps.gate.outputs.loop == 'true'
+        run: |
+          title="CI autofix could not fix $WORKFLOW on $BRANCH"
+          body="The autofix commit $FAILED_SHA still fails: $RUN_URL — needs a human look."
+          num=$(gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [ -n "$num" ]; then gh issue comment "$num" -R "$GITHUB_REPOSITORY" --body "$body"
+          else gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --body "$body"; fi
+
+      - if: steps.gate.outputs.go == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 50
+
+      - if: steps.gate.outputs.go == 'true'
+        name: Collect the failure
+        run: |
+          mkdir -p /tmp/ci-failure
+          gh run view "$RUN_ID" -R "$GITHUB_REPOSITORY" --json jobs \
+            --jq '.jobs[] | select(.conclusion=="failure") | "\(.name): " + ([.steps[] | select(.conclusion=="failure") | .name] | join(", "))' \
+            > /tmp/ci-failure/summary.txt || true
+          gh run view "$RUN_ID" -R "$GITHUB_REPOSITORY" --log-failed > /tmp/ci-failure/log.txt 2>&1 || true
+          tail -c 200000 /tmp/ci-failure/log.txt > /tmp/ci-failure/log-tail.txt
+          cat /tmp/ci-failure/summary.txt
+
+      - if: steps.gate.outputs.go == 'true'
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - if: steps.gate.outputs.go == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: >-
+            --max-turns 80
+            --allowedTools Bash,Read,Edit,Write,Glob,Grep
+          prompt: |
+            The "${{ github.event.workflow_run.name }}" pipeline failed on branch
+            "${{ github.event.workflow_run.head_branch }}" at commit ${{ github.event.workflow_run.head_sha }}.
+            Run: ${{ github.event.workflow_run.html_url }} (run id ${{ github.event.workflow_run.id }}).
+
+            Failed jobs/steps: /tmp/ci-failure/summary.txt. Failed-step log (tail): /tmp/ci-failure/log-tail.txt.
+            The workflow files are in .github/workflows; the repo's CLAUDE.md (if any) has the project rules.
+
+            Your job: find the root cause and fix it on this branch.
+            1. Read the summary and log, then the workflow that failed and the code involved.
+            2. Reproduce locally where you can (npm ci, then the failing script: check / build / test:e2e
+               with `npx playwright install --with-deps chromium` first). Verify the fix the same way.
+            3. Fix the cause, not the symptom: do not delete, skip or weaken tests or checks to make them
+               pass unless the test itself is wrong, and say so in the commit message if you change one.
+            4. If the failure is not fixable in code (runner/infra flake, network, a missing secret, a
+               repository setting such as Pages not enabled, store credentials): change nothing; if it
+               looks like a flake run `gh run rerun ${{ github.event.workflow_run.id }} --failed` once,
+               otherwise open an issue with `gh issue create` explaining exactly what the owner must do.
+            5. Commit with a message whose first line ends in "[ci-autofix]", describing the cause and fix,
+               with the trailer "Co-Authored-By: Claude <noreply@anthropic.com>", then
+               `git push origin HEAD:${{ github.event.workflow_run.head_branch }}`. If the push is rejected
+               because the branch moved, stop: the newer commit gets its own run.
+            Keep the change minimal and in the style of the surrounding code.
