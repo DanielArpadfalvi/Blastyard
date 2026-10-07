@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Blastyard</string>
+    <string name="title_activity_main">Blastyard</string>
+    <string name="package_name">com.arpadfalvi.blastyard</string>
+    <string name="custom_url_scheme">com.arpadfalvi.blastyard</string>
+</resources>
