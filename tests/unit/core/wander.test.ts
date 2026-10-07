@@ -125,7 +125,8 @@ describe('wander bot', () => {
       expect(s.hdr[Hdr.PHASE]).toBe(Phase.MATCH_OVER);
       expect(crates).toBeGreaterThan(5);
     }
-  });
+    // Full matches are intentionally long-running (~1.5 s locally, 2–3× slower on CI).
+  }, 20_000);
 
   it('a match against the bot replays from its input log alone', () => {
     const setup = { seed: 11, arena: ARENA_GARDEN, seats: [true, true, false, false] };
