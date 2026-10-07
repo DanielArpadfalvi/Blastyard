@@ -105,7 +105,8 @@ describe('wander bot', () => {
   });
 
   it('plays whole bot-vs-bot matches to a result on every classic arena', () => {
-    for (let seed = 1; seed <= 8; seed++) {
+    // One full match per classic arena: 8 matches ran close to the 5 s limit on CI runners.
+    for (let seed = 1; seed <= CLASSIC_ARENAS.length; seed++) {
       const arena = CLASSIC_ARENAS[seed % CLASSIC_ARENAS.length]!;
       const s = createState({
         seed,
