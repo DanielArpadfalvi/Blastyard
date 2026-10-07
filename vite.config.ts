@@ -28,9 +28,16 @@ function sourcemapsOutsideDist(): Plugin {
   };
 }
 
+/**
+ * Public base path. Relative (`./`) everywhere – dev server, e2e preview, Capacitor's file-based
+ * web dir – except the GitHub Pages preview, which builds with `VITE_BASE=/Blastyard/` so the app
+ * lives at https://danielarpadfalvi.github.io/Blastyard/ (see .github/workflows/pages.yml).
+ */
+const BASE = process.env.VITE_BASE?.trim() || './';
+
 export default defineConfig({
   plugins: [preact(), sourcemapsOutsideDist()],
-  base: './',
+  base: BASE,
   server: { port: 5173, strictPort: true },
   preview: { port: 4173, strictPort: true },
   build: {

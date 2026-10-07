@@ -49,6 +49,8 @@ export interface SessionOptions {
   readonly seed: number;
   readonly arena: ArenaDef;
   readonly winsToMatch: number;
+  /** Bot seats in the four-corner prototype (default 0). */
+  readonly bots?: number;
   /** Never advance on real time (tests drive ticks through `advance`). */
   readonly manualClock: boolean;
   /** Gesture clock for tap classification (tests); default: event timestamps. */
@@ -106,7 +108,7 @@ export class GameSession {
     private readonly callbacks: SessionCallbacks = {},
   ) {
     const { mode } = options;
-    this.plan = seatPlan(mode);
+    this.plan = seatPlan(mode, options.bots);
     const state = createState(matchSetupFor(mode, options));
     this.keyboard = new KeyboardSeats(keyBindingsFor(mode));
     this.controller = new InputController([this.zones, this.keyboard]);
@@ -133,7 +135,7 @@ export class GameSession {
     }
 
     this.layout = solveLayout({ width: app.screen.width, height: app.screen.height });
-    this.zonePlan = zonesFor(mode, this.layout);
+    this.zonePlan = zonesFor(mode, this.layout, options.bots);
     this.relayout();
     this.tickerFn = (ticker) => this.frame(ticker.deltaMS);
     app.ticker.add(this.tickerFn);
@@ -218,7 +220,7 @@ export class GameSession {
     if (key === this.layoutKey) return;
     this.layoutKey = key;
     this.layout = solveLayout({ width, height, safe });
-    this.zonePlan = zonesFor(this.mode, this.layout);
+    this.zonePlan = zonesFor(this.mode, this.layout, this.options.bots);
     this.view.setLayout(this.layout);
     this.zones.setLayout(this.zonePlan.zones, this.zonePlan.arena);
     const areas: ControlArea[] =

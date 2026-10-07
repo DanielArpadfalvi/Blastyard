@@ -31,9 +31,12 @@ async function boot(): Promise<void> {
     render(h(App, { shell: undefined }), ui);
     return;
   }
-  // The game: start screen → solo / face-off match → result.
+  // The game: start screen → solo / face-off match → result. The web preview build (GitHub Pages,
+  // `VITE_SPIKE=1`) and `?spike` add the T2.4 device-test tools; `?touchtest` opens the tester.
   const shell = new GameShell(app, parseShellOptions(location.search));
-  render(h(App, { shell }), ui);
+  const touchTest = query.has('touchtest');
+  const spike = import.meta.env.VITE_SPIKE === '1' || query.has('spike') || touchTest;
+  render(h(App, { shell, spike, touchTest }), ui);
 }
 
 void boot();

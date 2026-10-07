@@ -4,10 +4,20 @@ import { onLanguageChange, t } from '../i18n';
 import { Hud } from './Hud';
 import { ResultScreen } from './ResultScreen';
 import { StartScreen } from './StartScreen';
+import { TouchTester } from './TouchTester';
+
+export interface AppProps {
+  shell?: GameShell | undefined;
+  /** Show the device-test tools on the start screen (web preview build or `?spike`). */
+  spike?: boolean;
+  /** Open the touch tester right away (`?touchtest`). */
+  touchTest?: boolean;
+}
 
 /** Root of the DOM overlay drawn above the Pixi canvas. */
-export function App({ shell }: { shell?: GameShell }) {
+export function App({ shell, spike = false, touchTest = false }: AppProps) {
   const [, setRevision] = useState(0);
+  const [tester, setTester] = useState(touchTest);
   const [state, setState] = useState<ShellState | null>(shell ? shell.getState() : null);
   useEffect(() => onLanguageChange(() => setRevision((r) => r + 1)), []);
   useEffect(() => (shell ? shell.subscribe(setState) : undefined), [shell]);
@@ -26,7 +36,15 @@ export function App({ shell }: { shell?: GameShell }) {
 
   return (
     <div class="overlay" data-testid="ui-root">
-      {shell && state?.screen === 'menu' && <StartScreen onStart={(m) => shell.start(m)} />}
+      {shell && state?.screen === 'menu' && !tester && (
+        <StartScreen
+          onStart={(m, bots) => shell.start(m, bots)}
+          spike={spike}
+          onTouchTest={() => setTester(true)}
+          cornerBots={shell.options.bots}
+        />
+      )}
+      {tester && <TouchTester onBack={() => setTester(false)} />}
       {shell && state?.screen !== 'menu' && state?.snapshot && (
         <Hud snapshot={state.snapshot} banners={state.screen === 'playing'} />
       )}

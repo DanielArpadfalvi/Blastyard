@@ -9,6 +9,7 @@
  *   `seed=<int>`       fixed match seed (default: from the platform clock)
  *   `arena=<id>`       fixed classic arena (default: rotates)
  *   `wins=1–5`         rounds needed to win a match (default 3)
+ *   `bots=0–3`         bot seats in the four-corner prototype (default 0)
  */
 
 import type { Application } from 'pixi.js';
@@ -19,7 +20,7 @@ import { systemClock, type Clock } from '../platform/clock';
 import type { ArenaLayout } from '../render/layout';
 import { bakeArenaTextures, bakeControlTextures } from '../render/textures';
 import type { HudModel } from './hud';
-import type { GameMode } from './modes';
+import { MAX_CORNER_BOTS, type GameMode } from './modes';
 import { GameSession, type MatchResult, type SessionSnapshot } from './session';
 
 export type PlayMode = Exclude<GameMode, 'attract'>;
@@ -37,6 +38,8 @@ export interface ShellOptions {
   readonly seed: number | null;
   readonly arena: ArenaDef | null;
   readonly winsToMatch: number;
+  /** Default bot seats for the four-corner prototype. */
+  readonly bots: number;
   readonly clock?: Clock;
 }
 
@@ -90,6 +93,7 @@ export function parseShellOptions(search: string): ShellOptions {
     seed: intParam(q, 'seed', -0x80000000, 0x7fffffff),
     arena: CLASSIC_ARENAS.find((a) => a.id === arenaId) ?? null,
     winsToMatch: intParam(q, 'wins', 1, 5) ?? 3,
+    bots: intParam(q, 'bots', 0, MAX_CORNER_BOTS) ?? 0,
   };
 }
 
@@ -101,6 +105,7 @@ export class GameShell {
   private readonly controlTex;
   private matches = 0;
   private attractSeed = 0;
+  private bots: number;
   private readonly clock: Clock;
   readonly pointerClock = { now: 0 };
 
@@ -111,6 +116,7 @@ export class GameShell {
     this.arenaTex = bakeArenaTextures(app.renderer);
     this.controlTex = bakeControlTextures(app.renderer);
     this.clock = options.clock ?? systemClock;
+    this.bots = options.bots;
     // Nothing moves on its own under a manual clock: no frame loop at all, sessions present
     // explicitly after every `advance` (keeps parallel e2e runs cheap and deterministic).
     if (options.manualClock) app.ticker.stop();
@@ -128,8 +134,12 @@ export class GameShell {
     return () => this.listeners.delete(listener);
   }
 
-  /** Starts a match in `mode` (from the start or the result screen). */
-  start(mode: PlayMode): void {
+  /**
+   * Starts a match in `mode` (from the start or the result screen). `bots` (four-corner
+   * prototype only) defaults to the last value used, initially the `bots` query option.
+   */
+  start(mode: PlayMode, bots = this.bots): void {
+    this.bots = bots;
     const n = this.matches++;
     const seed = this.options.seed ?? (this.clock.now() ^ Math.imul(n + 1, 0x9e3779b9)) | 0;
     const arena = this.options.arena ?? (CLASSIC_ARENAS[n % CLASSIC_ARENAS.length] as ArenaDef);
@@ -143,6 +153,7 @@ export class GameShell {
           seed,
           arena,
           winsToMatch: this.options.winsToMatch,
+          bots,
           manualClock: this.options.manualClock,
           ...(this.options.manualClock ? { pointerClock: () => this.pointerClock.now } : {}),
         },

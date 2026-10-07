@@ -1,6 +1,7 @@
 import type { HudModel, SeatHud } from '../game/hud';
 import { formatClock } from '../game/hud';
 import type { SeatPlan } from '../game/modes';
+import { localSize, zoneScreenPoint } from '../input/rotation';
 import type { SessionSnapshot } from '../game/session';
 import { t } from '../i18n';
 import { SeatBadge } from './SeatBadge';
@@ -20,16 +21,35 @@ function placedStyle(p: Placed) {
   };
 }
 
-/** Where each seat's panel goes: top of its strip in solo, along the arena edge in face-off. */
+/**
+ * Where each seat's panel goes: at the far edge of the seat's zone as its player sees it, rotated
+ * toward them – top of the strip in solo, the arena side of the strip in face-off, the middle of
+ * the strip (away from the hand) in the four-corner layout. Seats without a zone (solo bot, corner
+ * bots) use their strip / corner area.
+ */
 function panelPlace(snapshot: SessionSnapshot, plan: SeatPlan): Placed {
-  const { left, right } = snapshot.zones;
-  const area = plan.seat === 0 ? left : right;
-  if (plan.orientation === 0) return { x: area.x + area.w / 2, y: area.y + 44, rotate: 0 };
-  // Rotated toward a player at the left (90°) or right (270°) edge: on the arena side of the strip.
-  const inset = 48;
-  const x = plan.orientation === 90 ? area.x + area.w - inset : area.x + inset;
-  return { x, y: area.y + area.h / 2, rotate: plan.orientation };
+  const { left, right, zones } = snapshot.zones;
+  const corners = snapshot.mode === 'corners';
+  const zone = snapshot.mode === 'solo' ? undefined : zones.find((z) => z.seat === plan.seat);
+  let area = zone?.rect ?? (plan.seat % 2 === 0 ? left : right);
+  if (!zone && corners) {
+    // Bot corner: same rectangle a player there would get.
+    const h = area.h / 2;
+    area = plan.seat < 2 ? { ...area, h } : { ...area, y: area.y + h, h };
+  }
+  const inset = plan.orientation === 0 && !corners ? 44 : 48;
+  const local = localSize(area, plan.orientation);
+  const at = zoneScreenPoint(area, plan.orientation, local.w / 2, inset);
+  return { x: at.x, y: at.y, rotate: plan.orientation };
 }
+
+/** Banner offset (fraction of the arena) toward a player's edge, per orientation. */
+const BANNER_SHIFT: Record<SeatPlan['orientation'], { x: number; y: number }> = {
+  0: { x: 0, y: 0.2 },
+  90: { x: -0.2, y: 0 },
+  180: { x: 0, y: -0.2 },
+  270: { x: 0.2, y: 0 },
+};
 
 function bannerText(hud: HudModel, plan: readonly SeatPlan[], viewer: number): string | null {
   const b = hud.banner;
@@ -108,14 +128,26 @@ export function Hud({
   const humans = plan.filter((p) => p.kind === 'human');
   const faceoff = humans.length > 1;
   const a = layout.arena;
-  const banners: Array<Placed & { viewer: number }> = faceoff
-    ? humans.map((p) => ({
-        x: a.x + (p.orientation === 90 ? a.w * 0.3 : a.w * 0.7),
-        y: a.y + a.h / 2,
-        rotate: p.orientation,
-        viewer: p.seat,
-      }))
-    : [{ x: a.x + a.w / 2, y: a.y + a.h / 2, rotate: 0, viewer: humans[0]?.seat ?? 0 }];
+  // One banner per side of the table that has players, turned toward them.
+  const sides = humans.filter(
+    (p, i) => humans.findIndex((q) => q.orientation === p.orientation) === i,
+  );
+  const banners: Array<Placed & { viewer: number }> =
+    sides.length > 1
+      ? sides.map((p) => ({
+          x: a.x + a.w * (0.5 + BANNER_SHIFT[p.orientation].x),
+          y: a.y + a.h * (0.5 + BANNER_SHIFT[p.orientation].y),
+          rotate: p.orientation,
+          viewer: p.seat,
+        }))
+      : [
+          {
+            x: a.x + a.w / 2,
+            y: a.y + a.h / 2,
+            rotate: sides[0]?.orientation ?? 0,
+            viewer: humans[0]?.seat ?? 0,
+          },
+        ];
   return (
     <div class="hud" data-testid="hud">
       <div
