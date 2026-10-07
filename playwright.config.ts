@@ -28,6 +28,9 @@ export default defineConfig({
   workers: process.env.CI ? undefined : 2,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
+  // The runner renders WebGL in software (SwiftShader) on 4 vCPUs: the tick-by-tick effect and
+  // arena-view flows at 1600×720+ take 3–5× as long as locally (~20 s here) and ran out of 30 s.
+  timeout: process.env.CI ? 120_000 : 30_000,
   // CI: 'github' turns failures into run annotations (readable without log access).
   reporter: process.env.CI ? [['github'], ['list'], ['html', { open: 'never' }]] : 'list',
   use: {
