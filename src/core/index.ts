@@ -23,7 +23,10 @@ export {
   GRID_W,
   HALF_TILE,
   Hdr,
+  JINX_EFFECT_COUNT,
+  Jinx,
   MAX_BOMBS,
+  NO_GOAL,
   MAX_SEATS,
   NO_OWNER,
   NO_SIDE,
@@ -94,11 +97,28 @@ export {
   bombCount,
   bombsInUse,
   bombsOwnedBy,
+  KICK_SPEED,
+  TOSS_DISTANCE,
+  bombCanEnter,
   canPassBomb,
+  kickBomb,
   removeBomb,
+  slideBombs,
 } from './bombs';
 export { EventKind, type EventKindId, type SimEvent } from './events';
-export { MAX_BOMB_CAPACITY, MAX_RANGE, applyPickup } from './powerups';
+export {
+  HASTE_INTERVAL,
+  JINX_TICKS,
+  JINX_TOUCH,
+  JINX_TRANSFER_COOLDOWN,
+  MAX_BOMB_CAPACITY,
+  MAX_DROPS,
+  MAX_RANGE,
+  SHIELD_INVULN,
+  applyPickup,
+  dropPickups,
+  jinxInput,
+} from './powerups';
 export {
   BASE_SPEED,
   CORNER_ASSIST,
@@ -145,4 +165,14 @@ export {
   type Replay,
   type ReplayResult,
 } from './replay';
-export { ESCAPE_MARGIN, WANDER_EPOCH, wanderHash, wanderInput } from './ai/wander';
+export { botInput } from './ai/bot';
+export {
+  BotLevel,
+  botLevel,
+  botProfile,
+  hasBots,
+  setBotLevel,
+  type BotLevelId,
+  type BotProfile,
+} from './ai/difficulty';
+export { SAFE as DANGER_SAFE, computeDanger, dEnd, dStart } from './ai/danger';

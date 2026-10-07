@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CLASSIC_ARENAS } from '../../../src/content/arenas/classic';
 import {
+  BotLevel,
   EventKind,
   Hdr,
   MAX_SEATS,
@@ -8,7 +9,6 @@ import {
   hashHex,
   stateHash,
   step,
-  wanderInput,
 } from '../../../src/core';
 import { MatchRunner, type MatchView } from '../../../src/game/matchRunner';
 import { GAME_SPEEDS, speedFactor } from '../../../src/game/settings';
@@ -16,6 +16,7 @@ import { applyShowcase } from '../../../src/game/showcase';
 
 const nullView: MatchView = { render: () => undefined };
 const TICKS = 3000;
+const FOUR_BOTS = [BotLevel.NORMAL, BotLevel.NORMAL, BotLevel.HARD, BotLevel.EXPERT];
 
 /**
  * Plays a seeded 4-bot match in "real time" at a game speed, with irregular frame times, and
@@ -26,12 +27,11 @@ function playAtSpeed(speedPercent: (typeof GAME_SPEEDS)[number]): string[] {
     seed: 21,
     arena: CLASSIC_ARENAS[2]!,
     seats: [true, true, true, true],
+    bots: FOUR_BOTS,
   });
   const runner = new MatchRunner(
     state,
-    (_st, out) => {
-      for (let s = 0; s < MAX_SEATS; s++) out[s] = wanderInput(state, s);
-    },
+    (_st, out) => out.fill(0),
     nullView,
     speedFactor(speedPercent),
   );
@@ -53,12 +53,10 @@ describe('game speed (render / loop clock only)', () => {
       seed: 21,
       arena: CLASSIC_ARENAS[2]!,
       seats: [true, true, true, true],
+      bots: FOUR_BOTS,
     });
     const inputs = new Uint8Array(MAX_SEATS);
-    for (let t = 0; t < TICKS; t++) {
-      for (let s = 0; s < MAX_SEATS; s++) inputs[s] = wanderInput(direct, s);
-      step(direct, inputs);
-    }
+    for (let t = 0; t < TICKS; t++) step(direct, inputs);
     expect(full.at(-1)).toBe(hashHex(stateHash(direct)));
   });
 

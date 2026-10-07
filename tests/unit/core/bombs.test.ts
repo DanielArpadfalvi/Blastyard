@@ -351,8 +351,8 @@ describe('bombs: pickups', () => {
   });
 });
 
-describe('pickups: other kinds (effects beyond the ability bit arrive with T4.1)', () => {
-  it('Max Flame maxes the range; Kick and Toss replace each other; Jinx is just consumed', () => {
+describe('pickups: other kinds (ability bits)', () => {
+  it('Max Flame maxes the range; Kick and Toss replace each other; Jinx starts a curse', () => {
     const s = tinyArena(['####', '#0.#', '####']);
     applyPickup(s, 0, Pickup.MAX_FLAME);
     expect(s.range[0]).toBe(MAX_RANGE);
@@ -368,6 +368,7 @@ describe('pickups: other kinds (effects beyond the ability bit arrive with T4.1)
     s.pickup[cell(2, 1)] = Pickup.JINX;
     run(s, 16, only(0, encodeInput(Dir.RIGHT)));
     expect(s.pickup[cell(2, 1)]).toBe(0);
-    expect(s.jinx[0]).toBe(0);
+    expect(s.jinx[0]).not.toBe(0);
+    expect(s.jinxTicks[0]).toBeGreaterThan(0);
   });
 });

@@ -18,6 +18,7 @@ import {
   GRID_W,
   Hdr,
   MAX_SEATS,
+  NO_GOAL,
   NO_OWNER,
   NO_SIDE,
   Phase,
@@ -45,6 +46,10 @@ export function startRound(state: SimState): void {
     state.bombBuffer[s] = 0;
     state.abilities[s] = 0;
     state.jinx[s] = 0;
+    state.jinxCd[s] = 0;
+    state.aiTimer[s] = 0;
+    state.aiGoal[s] = NO_GOAL;
+    state.aiMode[s] = 0;
     state.jinxTicks[s] = 0;
     state.invuln[s] = 0;
     state.moveDir[s] = Dir.NONE;

@@ -3,26 +3,18 @@
  *
  *   touch zones / keyboard ─┐
  *                           ├─ InputController.sample() ─┐
- *   wander bot (bot seats) ─┴────────────────────────────┴─ MatchRunner (fixed 60 Hz `step`)
+ *                              (bots run inside `step`) ─┴─ MatchRunner (fixed 60 Hz `step`)
  *                                                            └─ ArenaView + ControlsView (Pixi)
  *                                                            └─ HUD snapshot → Preact overlay
  *                                                            └─ events → effects, audio, haptics
  *
- * Bot inputs are computed from the state right before each tick and fed to `step` like any
- * other seat byte, so the input log of a match reproduces it exactly. With a manual clock (e2e)
+ * Bot seats are part of the match setup: `step` computes their inputs itself (own RNG streams),
+ * so the human input log plus the setup reproduces a match exactly. With a manual clock (e2e)
  * the runner never advances on its own; ticks only run through {@link GameSession.advance}.
  */
 
 import type { Application } from 'pixi.js';
-import {
-  Hdr,
-  MAX_SEATS,
-  Phase,
-  createState,
-  wanderInput,
-  type ArenaDef,
-  type SimEvent,
-} from '../core';
+import { Hdr, MAX_SEATS, Phase, createState, type ArenaDef, type SimEvent } from '../core';
 import { EventKind } from '../core';
 import { InputController } from '../input/controller';
 import { attachKeyboardInput, attachPointerInput, type PointerClock } from '../input/dom';
@@ -139,13 +131,11 @@ export class GameSession {
     this.controls = new ControlsView(controlTex, arenaTex);
     app.stage.addChild(this.view.root, this.controls.root);
 
-    const bots = this.plan.filter((p) => p.kind === 'bot').map((p) => p.seat);
     this.runner = new MatchRunner(
       state,
       (_st, out) => {
         if (this.inputEnabled) this.controller.sample(out);
         else out.fill(0);
-        for (const seat of bots) out[seat] = wanderInput(state, seat);
       },
       this.view,
       options.speed ?? 1,

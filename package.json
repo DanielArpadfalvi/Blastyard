@@ -15,7 +15,8 @@
     "test:coverage": "vitest run --coverage",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test",
     "test:e2e": "playwright test",
-    "sim:bench": "node scripts/run-ts.mjs scripts/sim-bench.ts"
+    "sim:bench": "node scripts/run-ts.mjs scripts/sim-bench.ts",
+    "bot:league": "node scripts/run-ts.mjs scripts/bot-league.ts"
   },
   "dependencies": {
     "pixi.js": "^8.22.0",

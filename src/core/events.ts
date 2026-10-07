@@ -35,6 +35,18 @@ export const EventKind = {
   ROUND_END: 12,
   /** Match decided; `value` = winning side. */
   MATCH_END: 13,
+  /** An eliminated seat's power-up `value` (`Pickup` kind) was scattered onto `cell`. */
+  PICKUP_DROPPED: 14,
+  /** `seat` threw its bomb from the tile it stood on; `cell` = landing cell, `value` = origin cell. */
+  BOMB_TOSSED: 15,
+  /** `seat` kicked a bomb on `cell`; `value` = slide direction. */
+  BOMB_KICKED: 16,
+  /** `seat`'s Shield absorbed a hit on `cell`. */
+  SHIELD_BROKEN: 17,
+  /** `seat` caught the Jinx curse `value` (`Jinx` effect id). */
+  JINX_CAUGHT: 18,
+  /** The curse jumped from `seat` to seat `value` (`cell` = the receiver's tile). */
+  JINX_PASSED: 19,
 } as const;
 export type EventKindId = (typeof EventKind)[keyof typeof EventKind];
 

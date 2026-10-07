@@ -56,14 +56,20 @@ export function cueIdFor(e: SimEvent): CueId | null {
     case EventKind.ROUND_START:
       return CueId.GO;
     case EventKind.BOMB_PLACED:
+    case EventKind.BOMB_TOSSED:
+    case EventKind.BOMB_KICKED:
       return CueId.PLACE;
     case EventKind.BOMB_EXPLODED:
       return CueId.BLAST;
     case EventKind.CRATE_DESTROYED:
+    case EventKind.PICKUP_DROPPED:
       return CueId.CRATE;
     case EventKind.PICKUP_COLLECTED:
+    case EventKind.JINX_CAUGHT:
+    case EventKind.JINX_PASSED:
       return CueId.PICKUP;
     case EventKind.PICKUP_BURNED:
+    case EventKind.SHIELD_BROKEN:
       return CueId.BURN;
     case EventKind.DEATH:
       return CueId.DEATH;

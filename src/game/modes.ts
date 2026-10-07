@@ -2,7 +2,7 @@
  * First-playable modes (T2.3): who sits where, which seats are bots, and the touch zones each
  * mode puts into the layout solver's side strips (PLAN §1.3–1.5).
  *
- * - `solo`: one player holding the device (seat 0, orientation 0) against the placeholder wander
+ * - `solo`: one player holding the device (seat 0, orientation 0) against an in-simulation
  *   bot (seat 1). Two-thumb scheme: the floating stick starts anywhere in the left strip, the bomb
  *   button sits in the right strip.
  * - `faceoff`: two players at the short sides of a device laid flat. Seat 0 owns the left strip
@@ -12,7 +12,7 @@
  *   of a device laid flat, each strip split into a top and a bottom corner zone with the
  *   one-finger scheme. Seats follow the spawns (1 top-left, 2 top-right, 3 bottom-left,
  *   4 bottom-right); the top seats sit at the top edge (orientation 180), the bottom ones at the
- *   bottom edge (0). `bots` (0–3) hands the last seats to wander bots and drops their zones.
+ *   bottom edge (0). `bots` (0–3) hands the last seats to bots and drops their zones.
  * - `attract`: four bots playing behind the start screen (no zones, no keyboard).
  *
  * Pure: no DOM, no Pixi.
@@ -23,7 +23,7 @@ import type { Rect } from '../input/geometry';
 import { localSize, zoneScreenPoint, type SeatOrientation, type Vec } from '../input/rotation';
 import type { ZoneSpec } from '../input/zones';
 import type { ArenaLayout } from '../render/layout';
-import { MAX_SEATS, type ArenaDef, type MatchSetup } from '../core';
+import { BotLevel, MAX_SEATS, type ArenaDef, type MatchSetup } from '../core';
 
 export type GameMode = 'solo' | 'faceoff' | 'corners' | 'attract';
 export type SeatKind = 'human' | 'bot' | 'off';
@@ -56,7 +56,7 @@ function clampBots(bots: number): number {
 
 /**
  * Seat plan per mode, always `MAX_SEATS` entries in seat order. `bots` only applies to
- * `corners`: the last `bots` seats are wander bots instead of players.
+ * `corners`: the last `bots` seats are bots instead of players.
  */
 export function seatPlan(mode: GameMode, bots = 0): SeatPlan[] {
   switch (mode) {
@@ -97,6 +97,8 @@ export interface MatchOptions {
   readonly winsToMatch: number;
   /** Bot seats in the four-corner prototype (default 0). */
   readonly bots?: number;
+  /** Difficulty of every bot seat (`BotLevel` 1–4, default Normal). */
+  readonly botLevel?: number;
 }
 
 export function matchSetupFor(mode: GameMode, options: MatchOptions): MatchSetup {
@@ -104,6 +106,9 @@ export function matchSetupFor(mode: GameMode, options: MatchOptions): MatchSetup
     seed: options.seed,
     arena: options.arena,
     seats: seatPlan(mode, options.bots).map((p) => p.kind !== 'off'),
+    bots: seatPlan(mode, options.bots).map((p) =>
+      p.kind === 'bot' ? (options.botLevel ?? BotLevel.NORMAL) : BotLevel.NONE,
+    ),
     rules: { winsToMatch: options.winsToMatch },
   };
 }

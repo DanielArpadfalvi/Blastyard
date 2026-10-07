@@ -10,22 +10,27 @@
  * round's countdown) → … → MATCH_OVER (frozen).
  *
  * Order within a PLAYING tick:
- *  1. movement of alive seats, gliding of ghosts (seat 0–3)
- *  2. bomb pass-through release
- *  3. pickup collection
+ *  1. bot decisions (bot seats replace their input byte), Jinx input effects, movement of alive
+ *     seats (a kick sets a bomb sliding)
+ *  2. bomb pass-through release, sliding bombs advance
+ *  3. pickup collection, Jinx ageing / transfer
  *  4. bomb fuses and this tick's explosions (flames, chains, crates → revealed pickups)
- *  5. bomb placement (press + 6-tick buffer), ghost revenge bombs
+ *  5. bomb placement or Toss (press + 6-tick buffer), gliding of ghosts, ghost revenge bombs
  *  6. bombs on burning cells are lit
  *  7. round clock and sudden-death blocks
- *  8. flame damage (simultaneous eliminations)
- *  9. flame / pickup-grace ageing
+ *  8. flame damage (simultaneous eliminations; a Shield absorbs the hit; eliminated seats drop
+ *     power-ups)
+ *  9. invulnerability, flame and pickup-grace ageing
  * 10. round-end check
  */
 
+import { botInput } from './ai/bot';
+import { botLevel } from './ai/difficulty';
 import {
   decayFlames,
   lightBombsInFlames,
   releaseBombPass,
+  slideBombs,
   updateBombInput,
   updateBombs,
 } from './bombs';
@@ -33,8 +38,9 @@ import { EventSink, type SimEvent } from './events';
 import { inputBomb } from './input';
 import { endRound, startRound } from './match';
 import { movePlayer } from './movement';
-import { collectPickups } from './powerups';
+import { collectPickups, jinxInput, updateJinx } from './powerups';
 import {
+  ageInvulnerability,
   applyFlameDamage,
   roundOutcome,
   updateCountdown,
@@ -45,24 +51,35 @@ import { Hdr, MAX_SEATS, Phase, isSeatActive, type SimState } from './state';
 
 const NO_EVENTS: readonly SimEvent[] = Object.freeze([]);
 
+/** The inputs the simulation really uses this tick (bots, curses applied); module scratch. */
+const effective = new Uint8Array(MAX_SEATS);
+
 function playTick(state: SimState, inputs: ArrayLike<number>, sink: EventSink): void {
   for (let s = 0; s < MAX_SEATS; s++) {
     if (!isSeatActive(state, s)) continue;
-    const input = (inputs[s] ?? 0) & 0xff;
-    if (state.alive[s]) movePlayer(state, s, input);
+    let input = (inputs[s] ?? 0) & 0xff;
+    if (botLevel(state, s) !== 0) input = botInput(state, s);
+    if (state.alive[s]) {
+      input = jinxInput(state, s, input);
+      movePlayer(state, s, input, sink);
+    }
+    effective[s] = input;
   }
   releaseBombPass(state);
+  slideBombs(state);
   collectPickups(state, sink);
+  updateJinx(state, sink);
   updateBombs(state, sink);
   for (let s = 0; s < MAX_SEATS; s++) {
     if (!isSeatActive(state, s)) continue;
-    const input = (inputs[s] ?? 0) & 0xff;
+    const input = effective[s] as number;
     if (state.alive[s]) updateBombInput(state, s, inputBomb(input), sink);
     else if (state.ghost[s]) updateGhost(state, s, input, sink);
   }
   lightBombsInFlames(state);
   const timeUp = updateRoundClock(state, sink);
   applyFlameDamage(state, sink);
+  ageInvulnerability(state);
   decayFlames(state);
   const outcome = roundOutcome(state, timeUp);
   if (outcome !== undefined) endRound(state, outcome, sink);

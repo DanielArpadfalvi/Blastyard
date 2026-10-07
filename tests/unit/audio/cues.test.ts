@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CLASSIC_ARENAS } from '../../../src/content/arenas/classic';
 import {
   BombFlag,
+  BotLevel,
   EventKind,
   GRID_W,
   Hdr,
@@ -13,7 +14,6 @@ import {
   cellIndex,
   createState,
   step,
-  wanderInput,
   type EventKindId,
   type SimEvent,
 } from '../../../src/core';
@@ -49,6 +49,12 @@ describe('sound event mapping', () => {
       [EventKind.ROUND_END, 1, CueId.ROUND_WIN],
       [EventKind.ROUND_END, NO_SIDE, CueId.ROUND_DRAW],
       [EventKind.MATCH_END, 0, CueId.MATCH_END],
+      [EventKind.PICKUP_DROPPED, 4, CueId.CRATE],
+      [EventKind.BOMB_TOSSED, 0, CueId.PLACE],
+      [EventKind.BOMB_KICKED, 0, CueId.PLACE],
+      [EventKind.SHIELD_BROKEN, 0, CueId.BURN],
+      [EventKind.JINX_CAUGHT, 1, CueId.PICKUP],
+      [EventKind.JINX_PASSED, 1, CueId.PICKUP],
     ];
     for (const [kind, value, cue] of expected) expect(cueIdFor(ev(kind, -1, value))).toBe(cue);
     // Every event kind is covered by the table above.
@@ -103,11 +109,11 @@ describe('sound event mapping', () => {
       seed: 4,
       arena: CLASSIC_ARENAS[0]!,
       seats: [true, true, true, true],
+      bots: [BotLevel.NORMAL, BotLevel.NORMAL, BotLevel.NORMAL, BotLevel.NORMAL],
     });
     const inputs = new Uint8Array(MAX_SEATS);
     const seen = new Set<string>();
     for (let t = 0; t < 4000 && state.hdr[Hdr.PHASE] !== Phase.ROUND_OVER; t++) {
-      for (let s = 0; s < MAX_SEATS; s++) inputs[s] = wanderInput(state, s);
       const events = step(state, inputs);
       for (const c of cuesForEvents(events)) {
         seen.add(c.id);

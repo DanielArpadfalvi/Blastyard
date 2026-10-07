@@ -10,7 +10,8 @@
  * cell plus up to `range` cells in each of the four directions. An arm stops before walls and
  * pillars; a crate absorbs the arm (the crate is destroyed, its cell gets no flame); a bomb in the
  * way is lit (its fuse drops to at most 4 ticks – the visible chain "domino") and the arm stops on
- * its cell. Flames pass over open pickups and burn them – only when a flame is laid, and never
+ * its cell. A bomb placed with Pierce (`BombFlag.PIERCE`) destroys every crate within its range
+ * and the flame continues behind them. Flames pass over open pickups and burn them – only when a flame is laid, and never
  * during the 30-tick grace after a pickup was revealed. A flame cell stays lethal for 30 ticks; a
  * bomb on a burning cell (e.g. dropped into a lingering flame) is lit as well.
  *
@@ -19,7 +20,9 @@
  */
 
 import { EventKind, type EventSink } from './events';
+import { DIR_DX, DIR_DY, type Direction } from './input';
 import {
+  Ability,
   BombFlag,
   CELL_COUNT,
   Hdr,
@@ -44,6 +47,10 @@ export const CHAIN_DELAY = 4;
 export const FLAME_TICKS = 30;
 /** A freshly revealed pickup is immune to flames for this many ticks. */
 export const PICKUP_GRACE = 30;
+/** Kick slide speed in subunits per tick (≈ 8 tiles/s). */
+export const KICK_SPEED = 34;
+/** How far (tiles) a thrown bomb flies; it lands closer when the target is not free. */
+export const TOSS_DISTANCE = 3;
 /** A bomb press that cannot be served yet is retried for this many further ticks. */
 export const BOMB_BUFFER_TICKS = 6;
 
@@ -189,19 +196,119 @@ export function updateBombInput(
   pressed: boolean,
   sink: EventSink,
 ): void {
-  if (pressed) state.bombBuffer[seat] = BOMB_BUFFER_TICKS + 1;
+  if (pressed) {
+    state.bombBuffer[seat] = BOMB_BUFFER_TICKS + 1;
+    if (tossOwnBomb(state, seat, sink)) {
+      state.bombBuffer[seat] = 0;
+      return;
+    }
+  }
   const buffered = state.bombBuffer[seat] as number;
   if (buffered === 0) return;
   if (bombsInUse(state, seat) < (state.bombCap[seat] as number)) {
     const x = toTile(state.px[seat] as number);
     const y = toTile(state.py[seat] as number);
-    if (addBomb(state, x, y, seat, FUSE_TICKS, state.range[seat] as number) >= 0) {
+    const flags = ((state.abilities[seat] as number) & Ability.PIERCE) !== 0 ? BombFlag.PIERCE : 0;
+    if (addBomb(state, x, y, seat, FUSE_TICKS, state.range[seat] as number, flags) >= 0) {
       state.bombBuffer[seat] = 0;
       sink.emit(EventKind.BOMB_PLACED, seat, cellIndex(x, y));
       return;
     }
   }
   state.bombBuffer[seat] = buffered - 1;
+}
+
+/** Is tile (x, y) free for a bomb to land / slide onto (floor, no bomb, nobody standing there)? */
+export function bombCanEnter(state: SimState, x: number, y: number): boolean {
+  if (!inBounds(x, y) || state.tiles[cellIndex(x, y)] !== Tile.FLOOR) return false;
+  if (bombAt(state, x, y) >= 0) return false;
+  const cell = cellIndex(x, y);
+  for (let s = 0; s < MAX_SEATS; s++) {
+    if (isSeatActive(state, s) && state.alive[s] && playerCell(state, s) === cell) return false;
+  }
+  return true;
+}
+
+/**
+ * Toss: with the ability and a press while standing on its own bomb (one it may still walk
+ * through), the bomb flies `TOSS_DISTANCE` tiles in the facing direction over walls,
+ * crates and bombs and lands on the first free floor tile from that distance down to 1.
+ * Returns true when a bomb was thrown.
+ */
+function tossOwnBomb(state: SimState, seat: number, sink: EventSink): boolean {
+  if (((state.abilities[seat] as number) & Ability.TOSS) === 0) return false;
+  const x = toTile(state.px[seat] as number);
+  const y = toTile(state.py[seat] as number);
+  const b = bombAt(state, x, y);
+  if (b < 0 || state.bombOwner[b] !== seat || !canPassBomb(state, b, seat)) return false;
+  const dir = state.facing[seat] as Direction;
+  const dx = DIR_DX[dir] as number;
+  const dy = DIR_DY[dir] as number;
+  if (dx === 0 && dy === 0) return false;
+  for (let d = TOSS_DISTANCE; d >= 1; d--) {
+    const lx = x + dx * d;
+    const ly = y + dy * d;
+    if (!bombCanEnter(state, lx, ly)) continue;
+    state.bombX[b] = tileCenter(lx);
+    state.bombY[b] = tileCenter(ly);
+    state.bombPass[b] = 0;
+    state.bombSlide[b] = 0;
+    sink.emit(EventKind.BOMB_TOSSED, seat, cellIndex(lx, ly), cellIndex(x, y));
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Kick: bomb `b` starts sliding in `dir` if the next tile is free. Returns true when it did.
+ */
+export function kickBomb(
+  state: SimState,
+  b: number,
+  dir: Direction,
+  seat: number,
+  sink?: EventSink,
+): boolean {
+  if (state.bombSlide[b] !== 0) return false;
+  const x = toTile(state.bombX[b] as number);
+  const y = toTile(state.bombY[b] as number);
+  if (!bombCanEnter(state, x + (DIR_DX[dir] as number), y + (DIR_DY[dir] as number))) return false;
+  state.bombSlide[b] = dir;
+  state.bombPass[b] = 0;
+  sink?.emit(EventKind.BOMB_KICKED, seat, cellIndex(x, y), dir);
+  return true;
+}
+
+/**
+ * Moves every sliding (kicked) bomb by `KICK_SPEED`. A bomb only continues into the next tile from
+ * a tile centre: it stops dead at the centre when that tile is not free, and never overshoots a
+ * centre within a tick.
+ */
+export function slideBombs(state: SimState): void {
+  const n = bombCount(state);
+  for (let b = 0; b < n; b++) {
+    const dir = state.bombSlide[b] as Direction;
+    if (dir === 0) continue;
+    const dx = DIR_DX[dir] as number;
+    const dy = DIR_DY[dir] as number;
+    const horiz = dx !== 0;
+    const pos = horiz ? (state.bombX[b] as number) : (state.bombY[b] as number);
+    const sign = dx + dy;
+    const centre = tileCenter(toTile(pos));
+    let next = pos + sign * KICK_SPEED;
+    if (pos === centre) {
+      const tx = toTile(state.bombX[b] as number);
+      const ty = toTile(state.bombY[b] as number);
+      if (!bombCanEnter(state, tx + dx, ty + dy)) {
+        state.bombSlide[b] = 0;
+        continue;
+      }
+    } else if (sign > 0 ? pos < centre && next >= centre : pos > centre && next <= centre) {
+      next = centre;
+    }
+    if (horiz) state.bombX[b] = next;
+    else state.bombY[b] = next;
+  }
 }
 
 const ARM_DX: readonly number[] = [0, 1, 0, -1];
@@ -228,6 +335,7 @@ function explode(state: SimState, b: number, sink: EventSink): void {
   const by = toTile(state.bombY[b] as number);
   const owner = state.bombOwner[b] as number;
   const range = state.bombRange[b] as number;
+  const pierce = ((state.bombFlags[b] as number) & BombFlag.PIERCE) !== 0;
   const center = cellIndex(bx, by);
   sink.emit(EventKind.BOMB_EXPLODED, owner, center, range);
   burnCell(state, center, owner, sink);
@@ -246,7 +354,10 @@ function explode(state: SimState, b: number, sink: EventSink): void {
           crateMark[cell] = 1;
           crateQueue[crateCount++] = cell;
         }
-        break;
+        if (!pierce) break;
+        // Pierce: the crate burns away and the flame carries on behind it.
+        burnCell(state, cell, owner, sink);
+        continue;
       }
       burnCell(state, cell, owner, sink);
       const other = bombAt(state, x, y);

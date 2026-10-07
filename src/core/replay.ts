@@ -150,6 +150,7 @@ export function runReplay(
     arena,
     seats: replay.seats,
     ...(replay.teams ? { teams: replay.teams } : {}),
+    ...(replay.bots ? { bots: replay.bots } : {}),
     ...(replay.rules ? { rules: replay.rules } : {}),
   };
   const state = createState(setup);

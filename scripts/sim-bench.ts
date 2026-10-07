@@ -12,6 +12,7 @@
 
 import { CLASSIC_ARENAS } from '../src/content/arenas/classic';
 import {
+  BotLevel,
   GRID_H,
   GRID_W,
   Hdr,
@@ -173,6 +174,46 @@ function readArg(args: readonly string[], name: string, fallback: number): numbe
   return v;
 }
 
+/** Budget for four bots deciding every tick on a mid-range phone (T4.2). */
+export const BOT_STEP_BUDGET_MS = 0.3;
+
+export interface BotBenchResult {
+  readonly rounds: number;
+  readonly ticks: number;
+  readonly stepMeanMs: number;
+  readonly errors: readonly string[];
+}
+
+/** Mean `step` time of seeded rounds with four bots of mixed levels (all four difficulties). */
+export function runBotBench(rounds: number, seed0 = 1): BotBenchResult {
+  const errors: string[] = [];
+  let ticks = 0;
+  let ms = 0;
+  const none = new Uint8Array(4);
+  const levels = [BotLevel.EASY, BotLevel.NORMAL, BotLevel.HARD, BotLevel.EXPERT];
+  for (let r = 0; r < rounds; r++) {
+    const seed = (seed0 + r * 7919) >>> 0;
+    const state = createState({
+      seed,
+      arena: CLASSIC_ARENAS[r % CLASSIC_ARENAS.length]!,
+      seats: [true, true, true, true],
+      bots: levels,
+      rules: { winsToMatch: 1 },
+    });
+    for (let t = 0; t < MAX_ROUND_TICKS; t++) {
+      const t0 = performance.now();
+      step(state, none);
+      ms += performance.now() - t0;
+      ticks++;
+      const phase = state.hdr[Hdr.PHASE];
+      if (phase === Phase.ROUND_OVER || phase === Phase.MATCH_OVER) break;
+    }
+    const bad = checkState(state);
+    if (bad) errors.push(`bot round ${r} (seed ${seed}): ${bad}`);
+  }
+  return { rounds, ticks, stepMeanMs: ticks > 0 ? ms / ticks : Number.NaN, errors };
+}
+
 /** CLI entry (called by `scripts/run-ts.mjs`). Returns the process exit code. */
 export function main(args: readonly string[]): number {
   const rounds = readArg(args, 'rounds', 1000);
@@ -193,7 +234,15 @@ export function main(args: readonly string[]): number {
       `(budget ${us(SNAPSHOT_BUDGET_MS)} ÷ ${SAFETY_MARGIN} = ${us(SNAPSHOT_BUDGET_MS / SAFETY_MARGIN)}), ` +
       `state ${result.stateBytes} B`,
   );
-  const failures = [...result.errors, ...budgetFailures(result)];
+  runBotBench(4, seed + 2_000_000); // warm-up
+  const bots = runBotBench(Math.max(1, Math.min(rounds, 40)), seed);
+  console.log(
+    `  4 bots         mean ${us(bots.stepMeanMs)}  (budget ${us(BOT_STEP_BUDGET_MS)}, ${bots.rounds} rounds)`,
+  );
+  const failures = [...result.errors, ...budgetFailures(result), ...bots.errors];
+  if (!(bots.stepMeanMs <= BOT_STEP_BUDGET_MS)) {
+    failures.push(`4-bot step ${us(bots.stepMeanMs)} > ${us(BOT_STEP_BUDGET_MS)}`);
+  }
   for (const f of failures) console.error(`  FAIL ${f}`);
   console.log(failures.length === 0 ? 'sim-bench: OK' : 'sim-bench: FAILED');
   return failures.length === 0 ? 0 : 1;

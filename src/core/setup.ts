@@ -16,6 +16,7 @@ import {
   type ArenaDef,
   type ParsedArena,
 } from './arena';
+import { setBotLevel } from './ai/difficulty';
 import { MAX_BOMB_CAPACITY, MAX_RANGE } from './powerups';
 import { startRound } from './match';
 import { MAX_SPEED_LEVEL } from './movement';
@@ -42,6 +43,11 @@ export interface MatchSetup {
    * seat is its own side.
    */
   readonly teams?: readonly number[];
+  /**
+   * Bot level per seat (`BotLevel`: 0 = human, 1 easy … 4 expert). Bots run inside `step` and
+   * replace whatever input that seat is given; omitted = every seat is a human.
+   */
+  readonly bots?: readonly number[];
   /** Overrides on top of `DEFAULT_RULES` (Classic). */
   readonly rules?: Partial<Rules>;
 }
@@ -127,6 +133,7 @@ export function createState(setup: MatchSetup): SimState {
     state.team[seat] = team;
   });
   hdr[Hdr.SEAT_MASK] = mask;
+  for (const seat of seats) setBotLevel(state, seat, setup.bots?.[seat] ?? 0);
   startRound(state);
   return state;
 }

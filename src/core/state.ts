@@ -64,6 +64,20 @@ export const Ability = {
   SHIELD: 8,
 } as const;
 
+/** Jinx curse effects (`jinx`). 0 = none. */
+export const Jinx = {
+  NONE: 0,
+  /** Directions are inverted. */
+  REVERSED: 1,
+  /** Half speed. */
+  SLOW: 2,
+  /** A bomb is placed automatically every `HASTE_INTERVAL` ticks. */
+  HASTE: 3,
+  /** Bombs cannot be placed. */
+  NO_BOMB: 4,
+} as const;
+export const JINX_EFFECT_COUNT = 4;
+
 /** Match phase (`hdr[Hdr.PHASE]`). PLAYING is 0 so hand-built test states play immediately. */
 export const Phase = {
   /** Round running: movement, bombs, flames, sudden death. */
@@ -90,7 +104,12 @@ export const BombFlag = {
   EXPLODING: 1,
   /** Dropped by a ghost (does not count against the owner's capacity). */
   GHOST: 2,
+  /** Placed by a seat with the Pierce power-up: the flame passes through crates. */
+  PIERCE: 4,
 } as const;
+
+/** `aiGoal` value for "no goal". */
+export const NO_GOAL = 255;
 
 /** "No side" value for round / match winners (draw or undecided). */
 export const NO_SIDE = -1;
@@ -129,8 +148,10 @@ export const Hdr = {
   START_SPEED: 18,
   POWERUP_CHANCE: 19,
   CRATE_DENSITY: 20,
+  /** Bot difficulty per seat, 3 bits each (seat `s` at bit `3 s`); 0 = human / no bot. */
+  BOT_CFG: 21,
 } as const;
-const HDR_LENGTH = 21;
+const HDR_LENGTH = 22;
 
 export interface SimState {
   readonly buffer: ArrayBuffer;
@@ -157,7 +178,16 @@ export interface SimState {
   /** Ticks left of a buffered bomb press. */
   readonly bombBuffer: Uint8Array;
   readonly team: Uint8Array;
+  /** Active Jinx curse (`Jinx` effect id, 0 = none). */
   readonly jinx: Uint8Array;
+  /** Ticks until a transferred curse may be passed on / taken again. */
+  readonly jinxCd: Uint8Array;
+  /** Bot: ticks until the next goal decision. */
+  readonly aiTimer: Uint8Array;
+  /** Bot: current goal cell (`NO_GOAL` = none). */
+  readonly aiGoal: Uint8Array;
+  /** Bot: 0 = pursuing a goal, 1 = escaping danger. */
+  readonly aiMode: Uint8Array;
   readonly jinxTicks: Uint16Array;
   readonly invuln: Uint16Array;
   /** 1 while an eliminated seat haunts the outer wall (ghost revenge); position in px/py. */
@@ -224,6 +254,10 @@ const FIELDS: ReadonlyArray<readonly [ViewName, FieldKind, number]> = [
   ['bombBuffer', 'u8', MAX_SEATS],
   ['team', 'u8', MAX_SEATS],
   ['jinx', 'u8', MAX_SEATS],
+  ['jinxCd', 'u8', MAX_SEATS],
+  ['aiTimer', 'u8', MAX_SEATS],
+  ['aiGoal', 'u8', MAX_SEATS],
+  ['aiMode', 'u8', MAX_SEATS],
   ['ghost', 'u8', MAX_SEATS],
   ['spawnCell', 'u8', MAX_SEATS],
   ['wins', 'u8', MAX_SEATS],
@@ -279,6 +313,7 @@ export function createEmptyState(): SimState {
   state.hdr[Hdr.MATCH_WINNER] = NO_SIDE;
   state.bombOwner.fill(NO_OWNER);
   state.flameOwner.fill(NO_OWNER);
+  state.aiGoal.fill(NO_GOAL);
   return state;
 }
 

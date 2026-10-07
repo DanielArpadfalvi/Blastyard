@@ -16,7 +16,8 @@
  *   than the maximum speed, so no opening can be skipped).
  */
 
-import { canPassBomb, bombAt } from './bombs';
+import { bombAt, canPassBomb, kickBomb } from './bombs';
+import type { EventSink } from './events';
 import {
   DIR_DX,
   DIR_DY,
@@ -27,7 +28,16 @@ import {
   isPerpendicular,
   type Direction,
 } from './input';
-import { Tile, cellIndex, inBounds, tileCenter, toTile, type SimState } from './state';
+import {
+  Ability,
+  Jinx,
+  Tile,
+  cellIndex,
+  inBounds,
+  tileCenter,
+  toTile,
+  type SimState,
+} from './state';
 
 /** Base speed in subunits per tick (3.75 tiles/s at 60 Hz). */
 export const BASE_SPEED = 16;
@@ -40,7 +50,8 @@ export const CORNER_ASSIST = 96;
 
 export function playerSpeed(state: SimState, seat: number): number {
   const lvl = Math.min(state.speedLvl[seat] as number, MAX_SPEED_LEVEL);
-  return BASE_SPEED + ROLLER_SPEED * lvl;
+  const speed = BASE_SPEED + ROLLER_SPEED * lvl;
+  return state.jinx[seat] === Jinx.SLOW ? speed >> 1 : speed;
 }
 
 /** Can `seat` stand on tile (x, y)? */
@@ -55,18 +66,31 @@ export function isPassable(state: SimState, seat: number, x: number, y: number):
  * Moves `seat` along `dir` by up to `budget` subunits, assuming it is aligned on the other axis.
  * Returns the distance actually moved.
  */
-function advance(state: SimState, seat: number, dir: Direction, budget: number): number {
+function advance(
+  state: SimState,
+  seat: number,
+  dir: Direction,
+  budget: number,
+  sink?: EventSink,
+): number {
   const horiz = isHorizontal(dir);
   const sign = dir === Dir.RIGHT || dir === Dir.DOWN ? 1 : -1;
   const pos = horiz ? (state.px[seat] as number) : (state.py[seat] as number);
   const tx = toTile(state.px[seat] as number);
   const ty = toTile(state.py[seat] as number);
   let target = pos + sign * budget;
-  if (!isPassable(state, seat, tx + (DIR_DX[dir] as number), ty + (DIR_DY[dir] as number))) {
+  const nx = tx + (DIR_DX[dir] as number);
+  const ny = ty + (DIR_DY[dir] as number);
+  if (!isPassable(state, seat, nx, ny)) {
     // Only up to the centre of the current tile (never backwards if already past it).
     const center = tileCenter(horiz ? tx : ty);
     target =
       sign > 0 ? Math.min(target, Math.max(pos, center)) : Math.max(target, Math.min(pos, center));
+    // Kick: standing at the centre, pushing against a resting bomb sets it sliding.
+    if (target === center && ((state.abilities[seat] as number) & Ability.KICK) !== 0) {
+      const b = bombAt(state, nx, ny);
+      if (b >= 0) kickBomb(state, b, dir, seat, sink);
+    }
   }
   if (horiz) state.px[seat] = target;
   else state.py[seat] = target;
@@ -74,13 +98,19 @@ function advance(state: SimState, seat: number, dir: Direction, budget: number):
 }
 
 /** Tries to move in `dir` (with corner assist). Returns true if the player moved. */
-function tryDirection(state: SimState, seat: number, dir: Direction, budget: number): boolean {
+function tryDirection(
+  state: SimState,
+  seat: number,
+  dir: Direction,
+  budget: number,
+  sink?: EventSink,
+): boolean {
   const horiz = isHorizontal(dir);
   const perpPos = horiz ? (state.py[seat] as number) : (state.px[seat] as number);
   const perpTile = toTile(perpPos);
   const off = perpPos - tileCenter(perpTile);
   if (off === 0) {
-    if (advance(state, seat, dir, budget) === 0) return false;
+    if (advance(state, seat, dir, budget, sink) === 0) return false;
     state.moveDir[seat] = dir;
     return true;
   }
@@ -95,13 +125,13 @@ function tryDirection(state: SimState, seat: number, dir: Direction, budget: num
   const next = perpPos - Math.sign(off) * slide;
   if (horiz) state.py[seat] = next;
   else state.px[seat] = next;
-  if (budget > slide) advance(state, seat, dir, budget - slide);
+  if (budget > slide) advance(state, seat, dir, budget - slide, sink);
   state.moveDir[seat] = dir;
   return true;
 }
 
 /** Moves one seat for one tick from its input byte. */
-export function movePlayer(state: SimState, seat: number, input: number): void {
+export function movePlayer(state: SimState, seat: number, input: number, sink?: EventSink): void {
   const main = inputMain(input);
   if (main === Dir.NONE) {
     state.moveDir[seat] = Dir.NONE;
@@ -109,12 +139,12 @@ export function movePlayer(state: SimState, seat: number, input: number): void {
   }
   state.facing[seat] = main;
   const budget = playerSpeed(state, seat);
-  if (tryDirection(state, seat, main, budget)) return;
+  if (tryDirection(state, seat, main, budget, sink)) return;
   const secondary = inputSecondary(input);
   if (
     secondary !== Dir.NONE &&
     secondary !== main &&
-    tryDirection(state, seat, secondary, budget)
+    tryDirection(state, seat, secondary, budget, sink)
   ) {
     return;
   }
@@ -122,7 +152,7 @@ export function movePlayer(state: SimState, seat: number, input: number): void {
   if (
     isPerpendicular(prev, main) &&
     prev !== secondary &&
-    tryDirection(state, seat, prev, budget)
+    tryDirection(state, seat, prev, budget, sink)
   ) {
     return;
   }

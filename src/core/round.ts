@@ -10,7 +10,8 @@
  *   After `SD_PAUSE_AT` slots only the central 5×5 is left and the spiral pauses for
  *   `SD_PAUSE_TICKS`, then closes completely. A falling block eliminates whoever stands on that
  *   cell, destroys crates, pickups and bombs (without exploding them).
- * - Damage: a seat whose tile is burning is eliminated. In team mode without friendly fire a
+ * - Damage: a seat whose tile is burning is eliminated (a Shield absorbs the hit instead and
+ *   grants `SHIELD_INVULN` ticks of invulnerability). In team mode without friendly fire a
  *   teammate's flame does not hurt (one's own flame always does). All eliminations of a tick
  *   happen together, so seats caught in the same tick die simultaneously.
  * - Ghosts (rule): an eliminated seat becomes a ghost on the outer wall (projected from where it
@@ -27,11 +28,14 @@ import { addBomb, bombAt, removeBomb } from './bombs';
 import { EventKind, type EventSink } from './events';
 import { DIR_DX, DIR_DY, Dir, inputBomb, inputMain, inputSecondary, type Direction } from './input';
 import { BASE_SPEED } from './movement';
+import { SHIELD_INVULN, dropPickups } from './powerups';
 import {
   BombFlag,
   GRID_H,
   GRID_W,
+  Ability,
   Hdr,
+  Jinx,
   MAX_SEATS,
   NO_OWNER,
   NO_SIDE,
@@ -158,6 +162,14 @@ function flameHurts(state: SimState, owner: number, victim: number): boolean {
   return sideOf(state, owner) !== sideOf(state, victim);
 }
 
+/** Counts the post-shield invulnerability down by one tick. */
+export function ageInvulnerability(state: SimState): void {
+  for (let s = 0; s < MAX_SEATS; s++) {
+    const left = state.invuln[s] as number;
+    if (left > 0) state.invuln[s] = left - 1;
+  }
+}
+
 /** Eliminates every alive seat standing in a lethal flame – all at once. */
 export function applyFlameDamage(state: SimState, sink: EventSink): void {
   let victims = 0;
@@ -165,7 +177,15 @@ export function applyFlameDamage(state: SimState, sink: EventSink): void {
     if (!isSeatActive(state, s) || !state.alive[s] || state.invuln[s] !== 0) continue;
     const cell = playerCell(state, s);
     if (state.flame[cell] === 0) continue;
-    if (flameHurts(state, state.flameOwner[cell] as number, s)) victims |= 1 << s;
+    if (!flameHurts(state, state.flameOwner[cell] as number, s)) continue;
+    if (((state.abilities[s] as number) & Ability.SHIELD) !== 0) {
+      // The shield takes the hit; a short invulnerability follows.
+      state.abilities[s] = (state.abilities[s] as number) & ~Ability.SHIELD;
+      state.invuln[s] = SHIELD_INVULN;
+      sink.emit(EventKind.SHIELD_BROKEN, s, cell);
+      continue;
+    }
+    victims |= 1 << s;
   }
   if (victims === 0) return;
   for (let s = 0; s < MAX_SEATS; s++) {
@@ -181,7 +201,10 @@ export function eliminate(state: SimState, seat: number, killer: number, sink: E
   state.alive[seat] = 0;
   state.bombBuffer[seat] = 0;
   state.moveDir[seat] = Dir.NONE;
+  state.jinx[seat] = Jinx.NONE;
+  state.jinxTicks[seat] = 0;
   sink.emit(EventKind.DEATH, seat, cell, killer);
+  dropPickups(state, seat, sink);
   if (((state.hdr[Hdr.RULE_FLAGS] as number) & RuleFlag.GHOSTS) !== 0) becomeGhost(state, seat);
 }
 
