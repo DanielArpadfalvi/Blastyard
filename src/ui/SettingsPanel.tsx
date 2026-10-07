@@ -7,37 +7,13 @@ import {
   type SettingsStore,
 } from '../game/settings';
 import { t, type TranslationKey } from '../i18n';
+import { Segmented } from './Segmented';
 
 const HAPTIC_LABEL: Record<HapticsSetting, TranslationKey> = {
   auto: 'hapticsAuto',
   on: 'hapticsOn',
   off: 'hapticsOff',
 };
-
-function Segmented<T extends string | number | boolean>(props: {
-  testId: string;
-  value: T;
-  options: readonly T[];
-  label: (v: T) => string;
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div class="segmented" role="radiogroup" data-testid={props.testId}>
-      {props.options.map((o) => (
-        <button
-          type="button"
-          role="radio"
-          aria-checked={o === props.value}
-          class={o === props.value ? 'segment segment-on' : 'segment'}
-          data-testid={`${props.testId}-${String(o)}`}
-          onClick={() => props.onChange(o)}
-        >
-          {props.label(o)}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 function Volume(props: {
   testId: string;

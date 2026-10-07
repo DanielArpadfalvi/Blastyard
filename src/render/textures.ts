@@ -27,6 +27,7 @@ import {
   drawPuffArt,
   starPoints,
 } from './puffArt';
+import { drawFlag, drawMonster } from './monsterArt';
 import { EYE_BLINK, EYE_SCARED, EYE_VARIANTS } from './scene';
 import { themeFor, type Theme } from './themes';
 
@@ -109,6 +110,10 @@ export interface ArenaTextures {
   readonly dropShadow: Texture;
   /** Marker on the cell the next sudden-death block falls on. */
   readonly dropTarget: Texture;
+  /** Challenge monsters, index = `Monster` kind (0 unused). */
+  readonly monsters: readonly Texture[];
+  /** The challenge flag. */
+  readonly flag: Texture;
   destroy(): void;
 }
 
@@ -819,6 +824,8 @@ export function bakeArenaTextures(renderer: Renderer): ArenaTextures {
     particles,
     dropShadow: cell(drawDropShadow()),
     dropTarget: cell(drawDropTarget()),
+    monsters: [0, 1, 2, 3].map((kind) => cell(kind === 0 ? new Graphics() : drawMonster(kind))),
+    flag: cell(drawFlag()),
     destroy(): void {
       for (const t of all) t.destroy(true);
       all.length = 0;

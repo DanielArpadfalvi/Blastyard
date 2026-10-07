@@ -205,6 +205,14 @@ export class TouchZones implements InputSource {
     this.pointers.clear();
   }
 
+  /** Is a finger down in the zone of `seat` (any role, however it got there)? */
+  touching(seat: number): boolean {
+    for (const p of this.pointers.values()) {
+      if ((this.zones[p.zone] as ZoneState).spec.seat === seat) return true;
+    }
+    return false;
+  }
+
   /** Number of touches currently bound to a zone. */
   get activePointers(): number {
     return this.pointers.size;

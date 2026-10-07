@@ -62,6 +62,7 @@ export function startRound(state: SimState): void {
     state.py[s] = tileCenter((cell - x) / GRID_W);
     state.alive[s] = 1;
     state.facing[s] = Dir.DOWN;
+    state.abilities[s] = hdr[Hdr.START_ABILITIES] as number;
     state.bombCap[s] = hdr[Hdr.START_BOMBS] as number;
     state.range[s] = hdr[Hdr.START_RANGE] as number;
     state.speedLvl[s] = hdr[Hdr.START_SPEED] as number;

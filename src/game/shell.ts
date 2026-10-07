@@ -12,6 +12,7 @@
  *   `bots=0–3`         bot seats in the four-corner prototype (default 0)
  *   `speed=70|85|100`  game speed for this session (default: settings)
  *   `motion=reduced|full`  reduced motion for this session (default: settings / OS)
+ *   `plus`             pretend Blastyard+ is owned (mock entitlement, T5.1/T5.2; real purchases: M8)
  *
  * The shell also owns the game feel (T3.2/T3.3): settings, audio (unlocked by the first user
  * gesture), haptics, the frame pacer (60 FPS in a match, 30 in menus) and the automatic effect
@@ -21,9 +22,13 @@
 import type { Application } from 'pixi.js';
 import { GameAudio, type AudioStats } from '../audio';
 import { FREE_ARENAS, arenaById } from '../content/arenas';
-import { Hdr, Phase, hashHex, stateHash, type ArenaDef } from '../core';
+import { levelById, nextLevel, tuningOf } from '../content/challenges';
+import { BotLevel, Hdr, Phase, hashHex, rleLength, stateHash, type ArenaDef } from '../core';
+import type { SeatOrientation } from '../input/rotation';
 import type { ZoneSpec } from '../input/zones';
 import { systemClock, type Clock } from '../platform/clock';
+import { mockEntitlements, type MockEntitlements } from '../platform/entitlement';
+import { onAppVisibility } from '../platform/lifecycle';
 import { webHaptics, type HapticKind, type HapticsPort } from '../platform/haptics';
 import { prefersReducedMotion } from '../platform/lifecycle';
 import { webStore } from '../platform/storage';
@@ -41,9 +46,20 @@ import {
 
 /** Highest renderer resolution per effect quality (0 = minimal … 2 = full). */
 const QUALITY_RESOLUTION: Readonly<Record<Quality, number>> = { 0: 1, 1: 1.5, 2: Infinity };
+import type { StageDef } from './challenge';
+import { ChallengeProgress } from './progress';
 import type { HudModel } from './hud';
+import type { LobbySeatView } from './lobby';
 import { MAX_CORNER_BOTS, type GameMode } from './modes';
-import { GameSession, type MatchResult, type SessionFeel, type SessionSnapshot } from './session';
+import { DEFAULT_PARTY, pickArena, resolveParty, type PartyConfig } from './party';
+import { PartyStore, type StoredParty } from './partyStore';
+import {
+  GameSession,
+  type ChallengeResult,
+  type MatchResult,
+  type SessionFeel,
+  type SessionSnapshot,
+} from './session';
 import {
   GAME_SPEEDS,
   SettingsStore,
@@ -54,14 +70,23 @@ import {
   type Settings,
 } from './settings';
 
-export type PlayMode = Exclude<GameMode, 'attract'>;
-export type Screen = 'menu' | 'playing' | 'result';
+export type PlayMode = Exclude<GameMode, 'attract' | 'party' | 'challenge'>;
+/** `lobby`: the party's warm-up arena; `challengeResult`: a challenge was won or lost. */
+export type Screen = 'menu' | 'lobby' | 'playing' | 'result' | 'challengeResult';
 
 export interface ShellState {
   readonly screen: Screen;
   readonly snapshot: SessionSnapshot | null;
   readonly result: MatchResult | null;
+  readonly challengeResult: ChallengeResult | null;
 }
+
+/** What "play again" repeats. */
+type LastStart =
+  | { readonly kind: 'mode'; readonly mode: PlayMode }
+  | { readonly kind: 'party'; readonly config: PartyConfig }
+  | { readonly kind: 'quick' }
+  | { readonly kind: 'challenge'; readonly id: string };
 
 export interface ShellOptions {
   readonly test: boolean;
@@ -71,6 +96,8 @@ export interface ShellOptions {
   readonly winsToMatch: number;
   /** Default bot seats for the four-corner prototype. */
   readonly bots: number;
+  /** Mock Blastyard+ entitlement (`?plus`). */
+  readonly plus: boolean;
   /** Session overrides (not saved). */
   readonly speed: GameSpeed | null;
   readonly reducedMotion: boolean | null;
@@ -80,6 +107,9 @@ export interface ShellOptions {
 /** Injectable feel dependencies (tests); defaults are the web platform implementations. */
 export interface ShellDeps {
   readonly settings?: SettingsStore;
+  readonly entitlements?: MockEntitlements;
+  readonly progress?: ChallengeProgress;
+  readonly partyStore?: PartyStore;
   readonly audio?: GameAudio;
   readonly haptics?: HapticsPort;
 }
@@ -98,6 +128,39 @@ export interface GameTestHook {
   /** Seat positions in tiles and liveness. */
   players(): Array<{ x: number; y: number; alive: boolean }>;
   hud(): HudModel;
+  /** Lobby: join / ready state of every human seat (null outside the lobby). */
+  lobby(): readonly LobbySeatView[] | null;
+  /** Seat orientations of the running session. */
+  orientations(): number[];
+  /** Is the running match paused? */
+  paused(): boolean;
+  /** Pauses / resumes the running match. */
+  setPaused(paused: boolean): void;
+  /** Mock entitlement: own Blastyard+ (or not). */
+  setPlus(plus: boolean): void;
+  /** Id of the arena the running session plays on. */
+  arena(): string;
+  /** Starts challenge level `id` directly (as the map's Play button does). */
+  startChallenge(id: string): void;
+  /** Records a best-stars result (to unlock the following levels in tests). */
+  recordStars(id: string, stars: number): void;
+  /** Challenge: objective progress and status of the running challenge (null otherwise). */
+  challenge(): {
+    levelId: string;
+    done: number;
+    target: number;
+    status: string;
+    stage: number;
+  } | null;
+  /**
+   * Challenge / scripted play: feeds seat 0 the packed input log (RLE `[byte, count, …]`, one
+   * byte per tick) instead of the touch zones.
+   */
+  playScript(log: number[]): void;
+  /** Advances until the challenge result screen is due (or `maxTicks`); returns ticks run. */
+  advanceUntilChallengeOver(maxTicks: number): number;
+  /** Advances until the lobby hands over to the match (or `maxTicks`); returns ticks run. */
+  advanceUntilLobbyDone(maxTicks: number): number;
   layout(): ArenaLayout;
   zones(): ZoneSpec[];
   /** Simulates `ticks` ticks of the current session (inputs sampled every tick). */
@@ -154,6 +217,7 @@ export function parseShellOptions(search: string): ShellOptions {
     manualClock: test && q.get('clock') === 'manual',
     seed: intParam(q, 'seed', -0x80000000, 0x7fffffff),
     arena: arenaById(arenaId) ?? null,
+    plus: q.has('plus'),
     winsToMatch: intParam(q, 'wins', 1, 5) ?? 3,
     bots: intParam(q, 'bots', 0, MAX_CORNER_BOTS) ?? 0,
     speed: GAME_SPEEDS.find((v) => String(v) === q.get('speed')) ?? null,
@@ -163,13 +227,22 @@ export function parseShellOptions(search: string): ShellOptions {
 
 export class GameShell {
   private session: GameSession | null = null;
-  private state: ShellState = { screen: 'menu', snapshot: null, result: null };
+  private state: ShellState = {
+    screen: 'menu',
+    snapshot: null,
+    result: null,
+    challengeResult: null,
+  };
   private readonly listeners = new Set<(s: ShellState) => void>();
   private readonly arenaTex;
   private readonly controlTex;
   private matches = 0;
   private attractSeed = 0;
   private bots: number;
+  private last: LastStart | null = null;
+  readonly entitlements: MockEntitlements;
+  readonly progress: ChallengeProgress;
+  private readonly partyStore: PartyStore;
   private readonly clock: Clock;
   readonly pointerClock = { now: 0 };
   readonly settings: SettingsStore;
@@ -195,6 +268,9 @@ export class GameShell {
     this.baseResolution = app.renderer.resolution;
     this.clock = options.clock ?? systemClock;
     this.bots = options.bots;
+    this.entitlements = deps.entitlements ?? mockEntitlements(options.plus);
+    this.progress = deps.progress ?? new ChallengeProgress(webStore());
+    this.partyStore = deps.partyStore ?? new PartyStore(webStore());
     this.settings =
       deps.settings ?? new SettingsStore(webStore(), defaultSettings(prefersReducedMotion()));
     if (options.speed !== null) this.settings.override({ gameSpeed: options.speed });
@@ -222,7 +298,26 @@ export class GameShell {
     if (!options.manualClock) this.startFrameLoop();
     this.attractSeed = options.seed ?? this.clock.now() | 0;
     this.showMenu();
+    // Going to the background pauses a running match (PLAN §1.3).
+    onAppVisibility((visible) => {
+      if (!visible) this.pauseIfPlaying();
+    });
     if (options.test) this.installTestHook();
+  }
+
+  /** The saved party setup and the Quick Match bot level. */
+  getParty(): StoredParty {
+    return this.partyStore.get();
+  }
+
+  /** Saves the party setup (the party screen calls this on every change). */
+  setParty(next: StoredParty): void {
+    this.partyStore.set(next);
+  }
+
+  /** Does the player own Blastyard+ (mock until M8)? */
+  hasPlus(): boolean {
+    return this.entitlements.hasPlus();
   }
 
   /** Effect settings for new sessions. */
@@ -240,7 +335,8 @@ export class GameShell {
     session.setFx(this.fxSettings());
     if (session.mode !== 'attract') {
       session.setSpeed(speedFactor(s.gameSpeed));
-      session.setHaptics(hapticsEnabled(s.haptics, session.mode));
+      const humans = session.plan.filter((p) => p.kind === 'human').length;
+      session.setHaptics(hapticsEnabled(s.haptics, session.mode, humans));
     }
   }
 
@@ -279,9 +375,19 @@ export class GameShell {
     this.audio.engine.dispose();
   }
 
-  private sessionFeel(mode: GameMode): SessionFeel {
+  private sessionFeel(mode: GameMode, humans?: number): SessionFeel {
     const s = this.settings.get();
-    return { audio: this.audio, haptics: this.haptics, hapticsOn: hapticsEnabled(s.haptics, mode) };
+    return {
+      audio: this.audio,
+      haptics: this.haptics,
+      hapticsOn: hapticsEnabled(s.haptics, mode, humans),
+    };
+  }
+
+  /** Seed of the next match: fixed by `?seed`, else from the platform clock. */
+  private nextSeed(): number {
+    const n = this.matches++;
+    return this.options.seed ?? (this.clock.now() ^ Math.imul(n + 1, 0x9e3779b9)) | 0;
   }
 
   getState(): ShellState {
@@ -299,6 +405,7 @@ export class GameShell {
    */
   start(mode: PlayMode, bots = this.bots): void {
     this.bots = bots;
+    this.last = { kind: 'mode', mode };
     const n = this.matches++;
     const seed = this.options.seed ?? (this.clock.now() ^ Math.imul(n + 1, 0x9e3779b9)) | 0;
     const arena = this.options.arena ?? (FREE_ARENAS[n % FREE_ARENAS.length] as ArenaDef);
@@ -329,6 +436,212 @@ export class GameShell {
       ),
     );
     this.toPlaying();
+  }
+
+  private commonOptions(): {
+    manualClock: boolean;
+    pointerClock?: () => number;
+    fx: FxSettings;
+    speed: number;
+  } {
+    return {
+      manualClock: this.options.manualClock,
+      ...(this.options.manualClock ? { pointerClock: () => this.pointerClock.now } : {}),
+      fx: this.fxSettings(),
+      speed: speedFactor(this.settings.get().gameSpeed),
+    };
+  }
+
+  private matchCallbacks(): {
+    onSnapshot: (snapshot: SessionSnapshot) => void;
+    onMatchOver: (result: MatchResult) => void;
+  } {
+    return {
+      onSnapshot: (snapshot) => this.set({ snapshot }),
+      onMatchOver: (result) => {
+        this.session?.disableInput();
+        this.toResult(result);
+      },
+    };
+  }
+
+  /**
+   * Party (T5.1): shows the warm-up lobby for `config` – a sandbox arena where every seat joins
+   * by touching its zone, can move and bomb without damage, and gets ready by resting a finger
+   * for a second. When everybody is ready the match starts with the (possibly turned) seats.
+   */
+  startLobby(config: PartyConfig): void {
+    this.last = { kind: 'party', config };
+    const seed = this.nextSeed();
+    const arena = this.options.arena ?? pickArena(config, this.hasPlus(), seed);
+    const party = resolveParty(config);
+    const humans = party.seats.filter((p) => p.kind === 'human').length;
+    this.replaceSession(
+      new GameSession(
+        this.app,
+        this.arenaTex,
+        this.controlTex,
+        {
+          mode: 'party',
+          seed,
+          arena,
+          winsToMatch: party.rules.winsToMatch,
+          party,
+          lobby: true,
+          ...this.commonOptions(),
+          feel: this.sessionFeel('party', humans),
+        },
+        {
+          onSnapshot: (snapshot) => this.set({ snapshot }),
+          onLobbyDone: (orientations) => {
+            // Carry the seats' turned orientations into the match, then start it (same seed
+            // and arena: the lobby showed the very field).
+            const turned = config.orientations.map((_, i) =>
+              party.layout === 'solo' ? null : (orientations[i] as SeatOrientation),
+            );
+            queueMicrotask(() =>
+              this.startPartyMatch({ ...config, orientations: turned }, seed, arena),
+            );
+          },
+        },
+      ),
+    );
+    this.pacer.setCap(MATCH_FPS_CAP);
+    this.set({ screen: 'lobby', result: null, challengeResult: null });
+  }
+
+  /** Starts the party match itself (after the lobby, or straight from Quick Match / replay). */
+  startPartyMatch(
+    config: PartyConfig,
+    seed = this.nextSeed(),
+    arena = this.options.arena ?? pickArena(config, this.hasPlus(), seed),
+  ): void {
+    this.last = { kind: 'party', config };
+    const party = resolveParty(config);
+    const humans = party.seats.filter((p) => p.kind === 'human').length;
+    this.replaceSession(
+      new GameSession(
+        this.app,
+        this.arenaTex,
+        this.controlTex,
+        {
+          mode: 'party',
+          seed,
+          arena,
+          winsToMatch: party.rules.winsToMatch,
+          party,
+          ...this.commonOptions(),
+          feel: this.sessionFeel('party', humans),
+        },
+        this.matchCallbacks(),
+      ),
+    );
+    this.toPlaying();
+  }
+
+  /** Quick Match: you against three bots of the saved level, Classic rules, one tap. */
+  startQuick(): void {
+    const { quickLevel } = this.getParty();
+    const bot = { kind: 'bot' as const, level: quickLevel };
+    const config: PartyConfig = {
+      ...DEFAULT_PARTY,
+      seats: [{ kind: 'human', level: BotLevel.NORMAL }, bot, bot, bot],
+      winsToMatch: 3,
+    };
+    this.startPartyMatch(config);
+    this.last = { kind: 'quick' };
+  }
+
+  /** Starts challenge level `id` (must be unlocked; a locked level is ignored). */
+  startChallenge(id: string): void {
+    const level = levelById(id);
+    if (!level || this.progress.lockOf(level, this.hasPlus()) !== 'open') return;
+    this.last = { kind: 'challenge', id };
+    const tuning = tuningOf(id);
+    const seed = tuning.seeds[0] ?? 1;
+    this.replaceSession(
+      new GameSession(
+        this.app,
+        this.arenaTex,
+        this.controlTex,
+        {
+          mode: 'challenge',
+          seed,
+          arena: (level.stages[0] as StageDef).arena,
+          winsToMatch: 1,
+          challenge: { level, tuning },
+          ...this.commonOptions(),
+          feel: this.sessionFeel('challenge'),
+        },
+        {
+          onSnapshot: (snapshot) => this.set({ snapshot }),
+          onChallengeOver: (result) => {
+            this.session?.disableInput();
+            if (result.won) this.progress.record(result.level.id, result.stars);
+            this.pacer.setCap(MENU_FPS_CAP);
+            this.audio.menu();
+            this.set({ screen: 'challengeResult', challengeResult: result });
+          },
+        },
+      ),
+    );
+    this.toPlaying();
+  }
+
+  /** The level after the one just played, if it can be played. */
+  nextChallengeId(): string | null {
+    const current = this.last?.kind === 'challenge' ? this.last.id : null;
+    const next = current ? nextLevel(current) : undefined;
+    return next && this.progress.lockOf(next, this.hasPlus()) === 'open' ? next.id : null;
+  }
+
+  /** Plays the next challenge level. */
+  startNextChallenge(): void {
+    const id = this.nextChallengeId();
+    if (id) this.startChallenge(id);
+  }
+
+  /** Repeats the last thing that was started (play again / retry). */
+  again(): void {
+    const last = this.last;
+    if (!last) return;
+    switch (last.kind) {
+      case 'mode':
+        this.start(last.mode);
+        break;
+      case 'party':
+        this.startPartyMatch(last.config);
+        break;
+      case 'quick':
+        this.startQuick();
+        break;
+      case 'challenge':
+        this.startChallenge(last.id);
+        break;
+    }
+  }
+
+  /** Lobby: turns a seat's orientation (the arrow in its zone). */
+  turnSeat(seat: number): void {
+    this.session?.turnSeat(seat);
+  }
+
+  /** Lobby: everybody ready at once (accessibility / desktop). */
+  readyAll(): void {
+    this.session?.readyAll();
+  }
+
+  /** Pauses / resumes the running match. */
+  setPaused(paused: boolean): void {
+    const screen = this.state.screen;
+    if (!this.session || (screen !== 'playing' && screen !== 'lobby')) return;
+    if (this.session.mode === 'attract') return;
+    this.session.setPaused(paused);
+  }
+
+  /** Background: pause a match in progress (not the lobby, which has no clock to lose). */
+  pauseIfPlaying(): void {
+    if (this.state.screen === 'playing') this.setPaused(true);
   }
 
   /**
@@ -367,7 +680,7 @@ export class GameShell {
     this.governor.reset();
     this.workMs = 0;
     this.workFrames = 0;
-    this.set({ screen: 'playing', result: null });
+    this.set({ screen: 'playing', result: null, challengeResult: null });
   }
 
   private toResult(result: MatchResult): void {
@@ -381,7 +694,7 @@ export class GameShell {
     this.startAttract();
     this.pacer.setCap(MENU_FPS_CAP);
     this.audio.menu();
-    this.set({ screen: 'menu', snapshot: null, result: null });
+    this.set({ screen: 'menu', snapshot: null, result: null, challengeResult: null });
   }
 
   private startAttract(): void {
@@ -444,6 +757,45 @@ export class GameShell {
         }));
       },
       hud: () => current().hud(),
+      lobby: () => this.state.snapshot?.lobby ?? null,
+      orientations: () => current().plan.map((p) => p.orientation),
+      paused: () => this.session?.paused ?? false,
+      setPaused: (paused) => this.setPaused(paused),
+      setPlus: (plus) => this.entitlements.setPlus(plus),
+      arena: () => current().options.arena.id,
+      startChallenge: (id) => this.startChallenge(id),
+      recordStars: (id, stars) => {
+        this.progress.record(id, stars);
+      },
+      challenge: () => {
+        const c = this.state.snapshot?.challenge;
+        return c
+          ? {
+              levelId: c.levelId,
+              done: c.progress.done,
+              target: c.progress.target,
+              status: c.status,
+              stage: c.progress.stage,
+            }
+          : null;
+      },
+      playScript: (log) => {
+        const bytes = new Uint8Array(rleLength(log));
+        let at = 0;
+        for (let i = 0; i < log.length; i += 2) {
+          bytes.fill((log[i] as number) & 0xff, at, at + (log[i + 1] as number));
+          at += log[i + 1] as number;
+        }
+        current().setScript(bytes);
+      },
+      advanceUntilChallengeOver: (maxTicks) => {
+        const session = current();
+        return session.advanceWhile(() => this.state.screen !== 'challengeResult', maxTicks);
+      },
+      advanceUntilLobbyDone: (maxTicks) => {
+        const session = current();
+        return session.advanceWhile(() => !session.lobbyFinished, maxTicks);
+      },
       layout: () => current().getLayout(),
       zones: () => current().getZonePlan().zones,
       advance: (ticks) => current().advance(ticks),

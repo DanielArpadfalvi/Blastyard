@@ -67,11 +67,15 @@ export function speedFactor(speed: GameSpeed): number {
   return speed / 100;
 }
 
-/** Whether haptics fire in `mode` (bot-only attract matches never vibrate). */
-export function hapticsEnabled(setting: HapticsSetting, mode: GameMode): boolean {
+/**
+ * Whether haptics fire in `mode` (bot-only attract matches never vibrate). `auto` means on when a
+ * single player holds the device: solo, challenges and a party with one human (`humans`).
+ */
+export function hapticsEnabled(setting: HapticsSetting, mode: GameMode, humans?: number): boolean {
   if (mode === 'attract' || setting === 'off') return false;
   if (setting === 'on') return true;
-  return mode === 'solo';
+  if (mode === 'party') return humans === 1;
+  return mode === 'solo' || mode === 'challenge';
 }
 
 /** Loads, validates and persists settings; notifies subscribers on every change. */

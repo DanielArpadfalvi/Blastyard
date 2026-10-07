@@ -19,8 +19,10 @@ import {
   GRID_W,
   GROW_INTERVAL,
   Hdr,
+  MAX_MONSTERS,
   MAX_SEATS,
   Mech,
+  Monster,
   SPIRAL,
   Tile,
   beltDir,
@@ -212,6 +214,7 @@ export class ArenaView {
   private readonly flameLayer = new Container();
   private readonly blockLayer = new Container();
   private readonly popLayer = new Container();
+  private readonly monsterLayer = new Container();
   private readonly puffLayer = new Container();
   private readonly deathLayer = new Container();
   private readonly fxLayer = new Container();
@@ -251,6 +254,9 @@ export class ArenaView {
   private readonly flameArms: FramePool<Sprite>;
   private readonly pops: FramePool<PopSprites>;
   private readonly puffs: PuffSprites[] = [];
+  private readonly monsters: Array<{ root: Container; body: Sprite; shadow: Sprite }> = [];
+  private readonly flagSprite: Sprite;
+  private flagCell = 0;
   private readonly scene = new Scene();
   private layout: ArenaLayout | undefined;
   /** Burning cells drawn by the latest `render`. */
@@ -274,6 +280,7 @@ export class ArenaView {
       this.blockLayer,
       this.trailLayer,
       this.popLayer,
+      this.monsterLayer,
       this.puffLayer,
       this.deathLayer,
       this.fxLayer,
@@ -285,6 +292,18 @@ export class ArenaView {
     this.dropTarget = centred(tex.dropTarget);
     this.dropTarget.visible = false;
     this.markLayer.addChild(this.dropTarget);
+    this.flagSprite = centred(tex.flag);
+    this.flagSprite.visible = false;
+    this.markLayer.addChild(this.flagSprite);
+    for (let i = 0; i < MAX_MONSTERS; i++) {
+      const root = new Container();
+      const shadow = centred(tex.shadow);
+      const body = centred(tex.monsters[1] as Texture);
+      root.addChild(shadow, body);
+      root.visible = false;
+      this.monsterLayer.addChild(root);
+      this.monsters.push({ root, body, shadow });
+    }
     for (let c = 0; c < CELL_COUNT; c++) {
       const x = c % GRID_W;
       const y = (c - x) / GRID_W;
@@ -398,7 +417,21 @@ export class ArenaView {
       }
     }
     for (const d of this.decals) this.placeDecal(d, layout);
+    this.placeFlag();
     this.drawBackdrop(layout);
+  }
+
+  private placeFlag(): void {
+    const layout = this.layout;
+    this.flagSprite.visible = this.flagCell > 0 && layout !== undefined;
+    if (!layout || this.flagCell <= 0) return;
+    const x = this.flagCell % GRID_W;
+    const y = (this.flagCell - x) / GRID_W;
+    this.flagSprite.position.set(
+      gridToScreen(layout, x + 0.5, 'x'),
+      gridToScreen(layout, y + 0.5, 'y'),
+    );
+    this.flagSprite.scale.set(layout.tile / TEX);
   }
 
   /**
@@ -411,6 +444,8 @@ export class ArenaView {
     this.decals.length = 0;
     this.decalLayer.removeChildren();
     this.mech = state.hdr[Hdr.MECH] as number;
+    this.flagCell = state.hdr[Hdr.GOAL_CELL] as number;
+    this.placeFlag();
     this.growCells = [];
     const dec = this.tex.decals;
     for (let c = 0; c < CELL_COUNT; c++) {
@@ -651,7 +686,51 @@ export class ArenaView {
       }
     }
 
+    this.drawMonsters(state, layout, k, alpha, time, lively);
     this.drawEffects(state, fx, layout, k, time);
+  }
+
+  /** Challenge monsters: walk (or hop) from their tile to the next, wobble while resting. */
+  private drawMonsters(
+    state: ReadonlySimState,
+    layout: ArenaLayout,
+    k: number,
+    alpha: number,
+    time: number,
+    lively: boolean,
+  ): void {
+    for (let i = 0; i < MAX_MONSTERS; i++) {
+      const sprites = this.monsters[i] as { root: Container; body: Sprite; shadow: Sprite };
+      const kind = state.monKind[i] as number;
+      if (kind === Monster.NONE || !state.monAlive[i]) {
+        sprites.root.visible = false;
+        continue;
+      }
+      sprites.root.visible = true;
+      sprites.body.texture = this.tex.monsters[kind] as Texture;
+      const from = state.monCell[i] as number;
+      const to = state.monNext[i] as number;
+      const span = Math.max(1, state.monSpan[i] as number);
+      const progress =
+        to === from
+          ? 0
+          : Math.min(1, Math.max(0, (span - (state.monTimer[i] as number) + alpha) / span));
+      const fx0 = from % GRID_W;
+      const fy0 = (from - fx0) / GRID_W;
+      const tx0 = to % GRID_W;
+      const ty0 = (to - tx0) / GRID_W;
+      const x = fx0 + (tx0 - fx0) * progress + 0.5;
+      const y = fy0 + (ty0 - fy0) * progress + 0.5;
+      const hop = state.monJump[i] ? Math.sin(progress * Math.PI) : 0;
+      const wobble = lively ? 1 + 0.05 * Math.sin(time * 0.22 + i * 1.7) : 1;
+      sprites.root.position.set(
+        gridToScreen(layout, x, 'x'),
+        gridToScreen(layout, y, 'y') - hop * 0.7 * layout.tile,
+      );
+      sprites.body.scale.set(k * 0.86 * wobble, k * 0.86 * (2 - wobble));
+      sprites.shadow.scale.set(k * (0.8 - 0.25 * hop));
+      sprites.shadow.position.set(0, hop * 0.7 * layout.tile);
+    }
   }
 
   /** Particles, falling blocks, the next-drop marker, eliminations and the flash. */

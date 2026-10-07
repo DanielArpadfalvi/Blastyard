@@ -18,7 +18,8 @@
  *  4. bomb fuses and this tick's explosions (flames, chains, crates → revealed pickups)
  *  5. bomb placement or Toss (press + 6-tick buffer), gliding of ghosts, ghost revenge bombs
  *  6. bombs on burning cells are lit
- *  7. round clock, growing pillars and sudden-death blocks
+ *  7. round clock, growing pillars and sudden-death blocks, challenge monsters (move, die in
+ *     flames, hurt seats they touch)
  *  8. flame damage (simultaneous eliminations; a Shield absorbs the hit; eliminated seats drop
  *     power-ups)
  *  9. invulnerability, flame and pickup-grace ageing
@@ -40,6 +41,7 @@ import { applyFloors, updateGrow } from './floor';
 import { inputBomb } from './input';
 import { endRound, startRound } from './match';
 import { movePlayer } from './movement';
+import { updateMonsters } from './monsters';
 import { collectPickups, jinxInput, updateJinx } from './powerups';
 import {
   ageInvulnerability,
@@ -82,6 +84,7 @@ function playTick(state: SimState, inputs: ArrayLike<number>, sink: EventSink): 
   lightBombsInFlames(state);
   const timeUp = updateRoundClock(state, sink);
   updateGrow(state, sink);
+  updateMonsters(state, sink);
   applyFlameDamage(state, sink);
   ageInvulnerability(state);
   decayFlames(state);

@@ -11,7 +11,11 @@ export function seatCss(seat: number): string {
 export function seatName(plan: readonly SeatPlan[], seat: number): string {
   const p = plan[seat];
   const humans = plan.filter((x) => x.kind === 'human').length;
-  if (p?.kind === 'bot') return t('seatBot');
+  if (p?.kind === 'bot') {
+    return plan.filter((x) => x.kind === 'bot').length > 1
+      ? t('seatBotN', { n: seat + 1 })
+      : t('seatBot');
+  }
   if (p?.kind === 'human' && humans === 1) return t('seatYou');
   return t('seatPlayer', { n: seat + 1 });
 }

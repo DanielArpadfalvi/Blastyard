@@ -1,10 +1,21 @@
 import { useState } from 'preact/hooks';
+import { BotLevel } from '../core';
 import type { PlayMode } from '../game/shell';
 import { MAX_CORNER_BOTS } from '../game/modes';
 import { getLanguage, setLanguage, t } from '../i18n';
+import { levelName } from './PartySetup';
 
 export interface StartScreenProps {
   onStart: (mode: PlayMode, bots?: number) => void;
+  /** Party setup (T5.1). */
+  onParty?: () => void;
+  /** One-tap Quick Match against three bots. */
+  onQuick?: () => void;
+  /** Challenge map (T5.2). */
+  onChallenges?: () => void;
+  /** Bot level of Quick Match and its change handler. */
+  quickLevel?: number;
+  onQuickLevel?: (level: number) => void;
   /** Device-test tools (web preview / `?spike`): touch tester and the four-corner prototype. */
   spike?: boolean;
   onTouchTest?: () => void;
@@ -13,9 +24,14 @@ export interface StartScreenProps {
   onSettings?: () => void;
 }
 
-/** Minimal start screen (T2.3): pick a mode; full menus come in T6.1. */
+/** Minimal start screen: Quick Match, Party, Challenges and the two first-playable modes. */
 export function StartScreen({
   onStart,
+  onParty,
+  onQuick,
+  onChallenges,
+  quickLevel = BotLevel.NORMAL,
+  onQuickLevel,
   spike = false,
   onTouchTest,
   cornerBots = 0,
@@ -46,9 +62,46 @@ export function StartScreen({
         <h1 class="title">{t('appTitle')}</h1>
         <p class="tagline">{t('tagline')}</p>
         <div class="mode-buttons">
+          {onQuick && (
+            <div class="corner-group">
+              <button type="button" class="mode-button" data-testid="start-quick" onClick={onQuick}>
+                <span class="mode-name">{t('modeQuick')}</span>
+                <span class="mode-hint">{t('modeQuickHint')}</span>
+              </button>
+              {onQuickLevel && (
+                <button
+                  type="button"
+                  class="bots-toggle"
+                  data-testid="quick-level"
+                  onClick={() => onQuickLevel((quickLevel % BotLevel.EXPERT) + 1)}
+                >
+                  {levelName(quickLevel)}
+                </button>
+              )}
+            </div>
+          )}
+          {onParty && (
+            <button type="button" class="mode-button" data-testid="start-party" onClick={onParty}>
+              <span class="mode-name">{t('modeParty')}</span>
+              <span class="mode-hint">{t('modePartyHint')}</span>
+            </button>
+          )}
+          {onChallenges && (
+            <button
+              type="button"
+              class="mode-button"
+              data-testid="start-challenges"
+              onClick={onChallenges}
+            >
+              <span class="mode-name">{t('modeChallenges')}</span>
+              <span class="mode-hint">{t('modeChallengesHint')}</span>
+            </button>
+          )}
+        </div>
+        <div class="mode-buttons mode-buttons-minor">
           <button
             type="button"
-            class="mode-button"
+            class="mode-button secondary compact"
             data-testid="start-solo"
             onClick={() => onStart('solo')}
           >
@@ -57,7 +110,7 @@ export function StartScreen({
           </button>
           <button
             type="button"
-            class="mode-button"
+            class="mode-button secondary compact"
             data-testid="start-faceoff"
             onClick={() => onStart('faceoff')}
           >

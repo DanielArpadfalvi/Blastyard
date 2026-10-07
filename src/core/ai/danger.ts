@@ -19,6 +19,7 @@
 
 import { CHAIN_DELAY, FLAME_TICKS, FUSE_TICKS, bombCanEnter, canPassBomb } from '../bombs';
 import { DIR_DX, DIR_DY } from '../input';
+import { monsterCell } from '../monsters';
 import { SD_INTERVAL, SPIRAL } from '../round';
 import {
   CELL_COUNT,
@@ -26,6 +27,8 @@ import {
   GRID_W,
   Hdr,
   MAX_BOMBS,
+  MAX_MONSTERS,
+  Monster,
   RuleFlag,
   Tile,
   cellIndex,
@@ -217,6 +220,38 @@ export function computeDanger(
   for (let b = 0; b < m; b++) if (bombHidden[b] === 0) walk(state, b, true);
 
   suddenDeath(state);
+  monsterDanger(state);
+}
+
+function markWindow(cell: number, start: number, end: number): void {
+  if (start < (dStart[cell] as number)) dStart[cell] = start;
+  if (end > (dEnd[cell] as number)) dEnd[cell] = end;
+}
+
+/**
+ * Challenge monsters (T5.2): a monster's tile is lethal while it stands on it – the tile it is
+ * leaving until it is half-way, the tile it walks to from then on – and a Hound's neighbouring
+ * tiles are lethal from about when it could step onto them. Nothing happens without monsters.
+ */
+function monsterDanger(state: SimState): void {
+  for (let i = 0; i < MAX_MONSTERS; i++) {
+    if (!state.monAlive[i]) continue;
+    const cell = state.monCell[i] as number;
+    const next = state.monNext[i] as number;
+    const timer = state.monTimer[i] as number;
+    const span = state.monSpan[i] as number;
+    const half = span >> 1;
+    if (timer > half) markWindow(cell, 0, timer - half + 2);
+    markWindow(next, Math.max(0, timer - half), timer + half + 4);
+    if (state.monKind[i] !== Monster.HOUND) continue;
+    // The tile it stands on counts too (it may be leaving a tile it is still on).
+    const here = monsterCell(state, i);
+    for (let d = 0; d < 4; d++) {
+      const n = NEIGHBOR[next * 4 + d] as number;
+      if (n < 0 || n === here || state.tiles[n] !== Tile.FLOOR) continue;
+      markWindow(n, timer + half, timer + span + 4);
+    }
+  }
 }
 
 /** The next closing-spiral blocks as endless windows. */

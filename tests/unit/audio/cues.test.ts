@@ -57,6 +57,7 @@ describe('sound event mapping', () => {
       [EventKind.JINX_PASSED, 1, CueId.PICKUP],
       [EventKind.TELEPORTED, 0, CueId.PICKUP],
       [EventKind.PILLAR_GROWN, 0, CueId.BLOCK_DROP],
+      [EventKind.MONSTER_KILLED, 1, CueId.BURN],
     ];
     for (const [kind, value, cue] of expected) expect(cueIdFor(ev(kind, -1, value))).toBe(cue);
     // Every event kind is covered by the table above.

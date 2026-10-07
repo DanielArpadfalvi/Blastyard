@@ -71,6 +71,7 @@ export function cueIdFor(e: SimEvent): CueId | null {
       return CueId.PICKUP;
     case EventKind.PICKUP_BURNED:
     case EventKind.SHIELD_BROKEN:
+    case EventKind.MONSTER_KILLED:
       return CueId.BURN;
     case EventKind.DEATH:
       return CueId.DEATH;

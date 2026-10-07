@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'preact/hooks';
-import type { GameShell, PlayMode, ShellState } from '../game/shell';
+import type { PartyConfig } from '../game/party';
+import type { GameShell, ShellState } from '../game/shell';
 import { onLanguageChange, t } from '../i18n';
+import { ChallengeMap } from './ChallengeMap';
+import { ChallengeResultScreen } from './ChallengeResult';
 import { Hud } from './Hud';
+import { PartySetup } from './PartySetup';
+import { PauseOverlay } from './PauseOverlay';
 import { ResultScreen } from './ResultScreen';
 import { SettingsPanel } from './SettingsPanel';
 import { StartScreen } from './StartScreen';
@@ -15,50 +20,133 @@ export interface AppProps {
   touchTest?: boolean;
 }
 
+/** What the menu backdrop shows next to the start screen. */
+type MenuView = 'start' | 'party' | 'challenges';
+
 /** Root of the DOM overlay drawn above the Pixi canvas. */
 export function App({ shell, spike = false, touchTest = false }: AppProps) {
   const [, setRevision] = useState(0);
   const [tester, setTester] = useState(touchTest);
   const [settings, setSettings] = useState(false);
+  const [menuView, setMenuView] = useState<MenuView>('start');
+  const [mapWorld, setMapWorld] = useState(1);
+  const [party, setParty] = useState<PartyConfig | null>(() => shell?.getParty().config ?? null);
   const [state, setState] = useState<ShellState | null>(shell ? shell.getState() : null);
   useEffect(() => onLanguageChange(() => setRevision((r) => r + 1)), []);
   useEffect(() => (shell ? shell.subscribe(setState) : undefined), [shell]);
+  // Stars and the entitlement change what the map shows.
+  useEffect(() => {
+    if (!shell) return undefined;
+    const bump = (): void => setRevision((r) => r + 1);
+    const offProgress = shell.progress.subscribe(bump);
+    const offPlus = shell.entitlements.subscribe(bump);
+    return () => {
+      offProgress();
+      offPlus();
+    };
+  }, [shell]);
 
   const screen = state?.screen;
   const result = state?.result;
+  const challengeResult = state?.challengeResult;
+  const paused = state?.snapshot?.paused === true;
   useEffect(() => {
-    if (!shell || screen !== 'playing') return undefined;
-    // Desktop: Escape leaves the match (the in-match pause comes with T5.1).
+    if (!shell || (screen !== 'playing' && screen !== 'lobby')) return undefined;
+    // Desktop: Escape pauses the match (and resumes it); in the lobby it goes back.
     const onKey = (e: KeyboardEvent): void => {
-      if (e.code === 'Escape') shell.showMenu();
+      if (e.code !== 'Escape') return;
+      if (screen === 'lobby') {
+        shell.showMenu();
+        setMenuView('party');
+      } else shell.setPaused(!paused);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [shell, screen]);
+  }, [shell, screen, paused]);
+
+  const toMenu = (view: MenuView = 'start'): void => {
+    shell?.showMenu();
+    setMenuView(view);
+  };
+  const stored = shell?.getParty();
+  const menu = shell && screen === 'menu' && !tester && !settings;
 
   return (
     <div class="overlay" data-testid="ui-root">
-      {shell && state?.screen === 'menu' && !tester && !settings && (
+      {shell && menu && menuView === 'start' && (
         <StartScreen
           onStart={(m, bots) => shell.start(m, bots)}
+          onParty={() => setMenuView('party')}
+          onQuick={() => shell.startQuick()}
+          onChallenges={() => setMenuView('challenges')}
+          quickLevel={stored?.quickLevel}
+          onQuickLevel={(level) => {
+            if (stored) shell.setParty({ ...stored, quickLevel: level });
+            setRevision((r) => r + 1);
+          }}
           spike={spike}
           onTouchTest={() => setTester(true)}
           cornerBots={shell.options.bots}
           onSettings={() => setSettings(true)}
         />
       )}
-      {shell && state?.screen === 'menu' && settings && (
+      {shell && menu && menuView === 'party' && party && (
+        <PartySetup
+          config={party}
+          hasPlus={shell.hasPlus()}
+          onChange={(next) => {
+            setParty(next);
+            shell.setParty({ config: next, quickLevel: stored?.quickLevel ?? 2 });
+          }}
+          onPlay={(config) => shell.startLobby(config)}
+          onBack={() => setMenuView('start')}
+        />
+      )}
+      {shell && menu && menuView === 'challenges' && (
+        <ChallengeMap
+          progress={shell.progress}
+          hasPlus={shell.hasPlus()}
+          world={mapWorld}
+          onPlay={(id) => {
+            setMapWorld(Number(id.charAt(1)) || 1);
+            shell.startChallenge(id);
+          }}
+          onBack={() => setMenuView('start')}
+        />
+      )}
+      {shell && screen === 'menu' && settings && (
         <SettingsPanel store={shell.settings} onBack={() => setSettings(false)} />
       )}
       {tester && <TouchTester onBack={() => setTester(false)} />}
-      {shell && state?.screen !== 'menu' && state?.snapshot && (
-        <Hud snapshot={state.snapshot} banners={state.screen === 'playing'} />
+      {shell &&
+        (screen === 'playing' || screen === 'lobby' || screen === 'result') &&
+        state?.snapshot && (
+          <Hud
+            snapshot={state.snapshot}
+            banners={screen === 'playing'}
+            onPause={() => shell.setPaused(true)}
+            onTurnSeat={(seat) => shell.turnSeat(seat)}
+            onReadyAll={() => shell.readyAll()}
+            onLeave={() => toMenu('party')}
+          />
+        )}
+      {shell && screen === 'playing' && paused && (
+        <PauseOverlay
+          onResume={() => shell.setPaused(false)}
+          onRestart={() => shell.again()}
+          onLeave={() => toMenu(state?.snapshot?.mode === 'challenge' ? 'challenges' : 'start')}
+        />
       )}
-      {shell && state?.screen === 'result' && result && result.mode !== 'attract' && (
-        <ResultScreen
-          result={result}
-          onAgain={() => shell.start(result.mode as PlayMode)}
-          onMenu={() => shell.showMenu()}
+      {shell && screen === 'result' && result && result.mode !== 'attract' && (
+        <ResultScreen result={result} onAgain={() => shell.again()} onMenu={() => toMenu()} />
+      )}
+      {shell && screen === 'challengeResult' && challengeResult && (
+        <ChallengeResultScreen
+          result={challengeResult}
+          hasNext={shell.nextChallengeId() !== null}
+          onRetry={() => shell.again()}
+          onNext={() => shell.startNextChallenge()}
+          onMap={() => toMenu('challenges')}
         />
       )}
       <div class="rotate-hint" role="status">

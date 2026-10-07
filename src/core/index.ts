@@ -28,6 +28,9 @@ export {
   JINX_EFFECT_COUNT,
   Jinx,
   MAX_BOMBS,
+  MAX_MONSTERS,
+  MONSTER_KILLER,
+  Monster,
   NO_GOAL,
   MAX_SEATS,
   NO_OWNER,
@@ -53,6 +56,7 @@ export {
   tileCenter,
   toTile,
   type FloorFxKind,
+  type MonsterKind,
   type PickupKind,
   type SimState,
   type TileType,
@@ -181,6 +185,18 @@ export {
   type Replay,
   type ReplayResult,
 } from './replay';
+export {
+  HOP_INTERVAL,
+  HOP_TICKS,
+  HOUND_SIGHT,
+  MONSTER_START_DELAY,
+  MONSTER_STEP_TICKS,
+  monsterCell,
+  monsterCount,
+  monstersAlive,
+  placeMonsters,
+  type MonsterSpawn,
+} from './monsters';
 export { botInput } from './ai/bot';
 export {
   BotLevel,

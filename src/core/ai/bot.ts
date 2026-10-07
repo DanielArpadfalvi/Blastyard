@@ -23,6 +23,7 @@
 import { bombCanEnter, bombsInUse } from '../bombs';
 import { DIR_DX, DIR_DY, Dir, encodeInput, type Direction } from '../input';
 import { CORNER_ASSIST, playerSpeed } from '../movement';
+import { monsterCell } from '../monsters';
 import { RngStream, randInt } from '../rng';
 import { SD_PAUSE_AT } from '../round';
 import {
@@ -31,6 +32,7 @@ import {
   GRID_W,
   Hdr,
   Jinx,
+  MAX_MONSTERS,
   MAX_SEATS,
   NO_GOAL,
   Phase,
@@ -80,6 +82,8 @@ const STEP_COST = 10;
 const JITTER = 6;
 /** Search horizon in steps for goals. */
 const GOAL_STEPS = 18;
+/** Score per step closer to the challenge flag. */
+const FLAG_PULL = 150;
 
 const PICKUP_VALUE: readonly number[] = [
   0, // none
@@ -100,7 +104,9 @@ const verified = new Uint8Array(CELL_COUNT);
 const trapBonus = new Uint16Array(CELL_COUNT);
 const score = new Int32Array(CELL_COUNT);
 const needsBomb = new Uint8Array(CELL_COUNT);
-const oppCells = new Int16Array(MAX_SEATS);
+const oppCells = new Int16Array(MAX_SEATS + MAX_MONSTERS);
+const flagDist = new Int16Array(CELL_COUNT);
+const flagQueue = new Int16Array(CELL_COUNT);
 const wrongCells = new Int16Array(CELL_COUNT);
 const trapCandidates = new Int16Array(8);
 
@@ -139,7 +145,10 @@ function settleDir(dx: number, dy: number): Direction {
   return Dir.NONE;
 }
 
-/** Collects the cells of alive opponents (other side); returns how many. */
+/**
+ * Collects the cells of alive opponents (other side) and of challenge monsters, which a bot
+ * hunts like opponents; returns how many.
+ */
 function findOpponents(state: SimState, seat: number): number {
   let n = 0;
   const side = sideOf(state, seat);
@@ -148,7 +157,34 @@ function findOpponents(state: SimState, seat: number): number {
     if (sideOf(state, s) === side) continue;
     oppCells[n++] = playerCell(state, s);
   }
+  for (let i = 0; i < MAX_MONSTERS; i++) {
+    if (state.monAlive[i]) oppCells[n++] = monsterCell(state, i);
+  }
   return n;
+}
+
+/**
+ * Walking distance from every cell to the challenge flag, crates counted as walkable (the bot
+ * will blast its way through them); -1 = cut off by walls.
+ */
+function flagDistances(state: SimState, goal: number): void {
+  flagDist.fill(-1);
+  flagDist[goal] = 0;
+  flagQueue[0] = goal;
+  let head = 0;
+  let tail = 1;
+  while (head < tail) {
+    const c = flagQueue[head++] as number;
+    const d = (flagDist[c] as number) + 1;
+    for (let i = 0; i < 4; i++) {
+      const n = NEIGHBOR[c * 4 + i] as number;
+      if (n < 0 || (flagDist[n] as number) >= 0) continue;
+      const tile = state.tiles[n];
+      if (tile === Tile.WALL || tile === Tile.PILLAR) continue;
+      flagDist[n] = d;
+      flagQueue[tail++] = n;
+    }
+  }
 }
 
 /** Is there a clear blast line of ≤ `range` cells from `cell` to an opponent cell? */
@@ -527,6 +563,10 @@ function decide(
     bombsInUse(state, seat) < (state.bombCap[seat] as number) && state.jinx[seat] !== Jinx.NO_BOMB;
   const opponents = findOpponents(state, seat);
   const centred = Math.abs(dx) <= DROP_WINDOW && Math.abs(dy) <= DROP_WINDOW;
+  // Challenge flag: seat 0 (the player's seat, driven by a bot only while authoring reference
+  // solutions) heads for it.
+  const goalCell = seat === 0 ? (state.hdr[Hdr.GOAL_CELL] as number) : 0;
+  if (goalCell > 0) flagDistances(state, goalCell);
 
   // Kick an adjacent bomb towards an opponent.
   if (profile.kick && ((state.abilities[seat] as number) & Ability.KICK) !== 0 && centred) {
@@ -591,6 +631,11 @@ function decide(
       s += (30 - nearest) * chase;
     }
     if (sd) s += (14 - manhattan(c, 6 * GRID_W + 6)) * 40;
+    if (goalCell > 0) {
+      const fd = flagDist[c] as number;
+      if (c === goalCell) s += 1_000_000;
+      else if (fd >= 0) s += (60 - fd) * FLAG_PULL;
+    }
     s += randInt(state.rng, stream, JITTER);
     score[c] = s;
   }

@@ -51,6 +51,8 @@ export const EventKind = {
   TELEPORTED: 20,
   /** A growing pillar rose on `cell` (Rubble arena). */
   PILLAR_GROWN: 21,
+  /** A challenge monster of kind `value` died on `cell` (`seat` = owner of the flame, if any). */
+  MONSTER_KILLED: 22,
 } as const;
 export type EventKindId = (typeof EventKind)[keyof typeof EventKind];
 

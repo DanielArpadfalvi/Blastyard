@@ -26,7 +26,8 @@ Vite + TypeScript (strict) · PixiJS v8 (gameplay canvas) · Preact (DOM UI over
 
 ## Commands
 - `npm run dev` – dev server
-- `npm run check` – typecheck + lint + unit tests + content validation (must pass before every commit)
+- `npm run check` – typecheck + lint + unit tests + content validation (`npm run validate:content`: arenas + replay of all 36 challenge solutions; must pass before every commit)
+- `npm run solve:challenges -- --write` – regenerate challenge seeds, star thresholds and reference solutions (a bot plays them); needed after any change that alters the simulation (then run `npm run format`)
 - `npm run test:e2e` – Playwright (Chromium at /opt/pw-browsers; never run `playwright install`)
 - `npm run build` – production web build
 - `npm run sim:bench` / `npm run bot:league` – simulation performance budget and bot win-rate targets

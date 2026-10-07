@@ -405,6 +405,28 @@ export class Effects {
           });
         }
         break;
+      case EventKind.MONSTER_KILLED:
+        this.burst(Fx.SMOKE, this.n(6), t0, cx, cy, {
+          speed: [0.02, 0.04],
+          life: [24, 34],
+          scale: [0.3, 0.45],
+          end: 2,
+          tints: [0xf1ece4, 0xd9d2c8],
+          drag: 0.08,
+          alpha: 0.8,
+        });
+        this.burst(Fx.STAR, this.n(7), t0, cx, cy, {
+          speed: [0.03, 0.06],
+          life: [18, 26],
+          scale: [0.28, 0.42],
+          end: 0.15,
+          tints: [P.FUSE, 0xffffff, P.FLAME_CORE],
+          drag: 0.07,
+          vz: [0.02, 0.05],
+          spin: 0.25,
+        });
+        this.shake(t0, 2, 8);
+        break;
       case EventKind.PICKUP_COLLECTED:
         this.burst(Fx.STAR, this.n(7), t0, cx, cy, {
           speed: [0.03, 0.05],

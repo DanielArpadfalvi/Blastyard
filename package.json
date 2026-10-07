@@ -13,10 +13,12 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run validate:content",
     "test:e2e": "playwright test",
     "sim:bench": "node scripts/run-ts.mjs scripts/sim-bench.ts",
-    "bot:league": "node scripts/run-ts.mjs scripts/bot-league.ts"
+    "bot:league": "node scripts/run-ts.mjs scripts/bot-league.ts",
+    "validate:content": "node scripts/run-ts.mjs scripts/validate-content.ts",
+    "solve:challenges": "node scripts/run-ts.mjs scripts/solve-challenges.ts"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",

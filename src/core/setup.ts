@@ -19,13 +19,16 @@ import {
 import { setBotLevel } from './ai/difficulty';
 import { MAX_BOMB_CAPACITY, MAX_RANGE } from './powerups';
 import { startRound } from './match';
+import { placeMonsters, type MonsterSpawn } from './monsters';
 import { MAX_SPEED_LEVEL } from './movement';
 import { RngStream, randInt, seedAllStreams } from './rng';
 import { DEFAULT_RULES, type Rules } from './rules';
 import {
+  Ability,
   GRID_W,
   Hdr,
   MAX_SEATS,
+  Phase,
   PICKUP_KIND_COUNT,
   RuleFlag,
   createEmptyState,
@@ -50,6 +53,17 @@ export interface MatchSetup {
   readonly bots?: readonly number[];
   /** Overrides on top of `DEFAULT_RULES` (Classic). */
   readonly rules?: Partial<Rules>;
+  /** Challenge monsters (at most `MAX_MONSTERS`), standing on plain floor cells of the arena. */
+  readonly monsters?: readonly MonsterSpawn[];
+  /** Challenge flag: cell index of the goal tile (a floor cell), exposed to bots and the view. */
+  readonly goalCell?: number;
+  /** `Ability` bits every seat starts each round with (Kick and Toss exclude each other). */
+  readonly startAbilities?: number;
+  /**
+   * Warm-up sandbox (party lobby): the round is already playing, has no clock, and flames and
+   * monsters hurt nobody. Nobody wins; the match never ends.
+   */
+  readonly warmup?: boolean;
 }
 
 function manhattan(a: number, b: number): number {
@@ -107,18 +121,38 @@ export function createState(setup: MatchSetup): SimState {
   hdr[Hdr.MECH] = parsed.mech;
 
   let flags = 0;
-  if (rules.suddenDeath === 'spiral') flags |= RuleFlag.SUDDEN_DEATH;
+  if (rules.suddenDeath === 'spiral' && !setup.warmup) flags |= RuleFlag.SUDDEN_DEATH;
+  if (setup.warmup) flags |= RuleFlag.HARMLESS;
   if (rules.ghosts) flags |= RuleFlag.GHOSTS;
   if (rules.friendlyFire) flags |= RuleFlag.FRIENDLY_FIRE;
   if (setup.teams) flags |= RuleFlag.TEAMS;
   hdr[Hdr.RULE_FLAGS] = flags;
-  hdr[Hdr.ROUND_TICKS] = clampInt(rules.roundSeconds, 0, 3600, 'roundSeconds') * 60;
+  hdr[Hdr.ROUND_TICKS] = setup.warmup
+    ? 0
+    : clampInt(rules.roundSeconds, 0, 3600, 'roundSeconds') * 60;
   hdr[Hdr.WINS_TO_MATCH] = clampInt(rules.winsToMatch, 1, 9, 'winsToMatch');
   hdr[Hdr.START_BOMBS] = clampInt(rules.startBombs, 1, MAX_BOMB_CAPACITY, 'startBombs');
   hdr[Hdr.START_RANGE] = clampInt(rules.startRange, 1, MAX_RANGE, 'startRange');
   hdr[Hdr.START_SPEED] = clampInt(rules.startSpeedLevel, 0, MAX_SPEED_LEVEL, 'startSpeedLevel');
   hdr[Hdr.POWERUP_CHANCE] = clampInt(rules.powerupChance, 0, 100, 'powerupChance');
   hdr[Hdr.CRATE_DENSITY] = setup.arena.crateDensity ?? DEFAULT_CRATE_DENSITY;
+
+  const abilities = setup.startAbilities ?? 0;
+  if (!Number.isInteger(abilities) || abilities < 0 || abilities > 15) {
+    throw new RangeError('startAbilities: bits 0–15');
+  }
+  if ((abilities & Ability.KICK) !== 0 && (abilities & Ability.TOSS) !== 0) {
+    throw new RangeError('startAbilities: Kick and Toss are mutually exclusive');
+  }
+  hdr[Hdr.START_ABILITIES] = abilities;
+  if (setup.goalCell !== undefined) {
+    const goal = setup.goalCell;
+    if (!Number.isInteger(goal) || goal <= 0 || goal >= state.layout.length) {
+      throw new RangeError('goalCell must be a cell index');
+    }
+    if (parsed.cells[goal] !== 0) throw new RangeError('goalCell must be a plain floor cell');
+    hdr[Hdr.GOAL_CELL] = goal;
+  }
 
   const seats: number[] = [];
   for (let s = 0; s < MAX_SEATS; s++) if (setup.seats[s]) seats.push(s);
@@ -138,5 +172,17 @@ export function createState(setup: MatchSetup): SimState {
   hdr[Hdr.SEAT_MASK] = mask;
   for (const seat of seats) setBotLevel(state, seat, setup.bots?.[seat] ?? 0);
   startRound(state);
+  if (setup.monsters) {
+    for (const m of setup.monsters) {
+      if (parsed.cells[m.y * GRID_W + m.x] !== 0) {
+        throw new RangeError('monsters must start on plain floor cells');
+      }
+    }
+    placeMonsters(state, setup.monsters);
+  }
+  if (setup.warmup) {
+    hdr[Hdr.PHASE] = Phase.PLAYING;
+    hdr[Hdr.PHASE_TIMER] = 0;
+  }
   return state;
 }

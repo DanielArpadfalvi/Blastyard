@@ -25,14 +25,29 @@ import type { ZoneSpec } from '../input/zones';
 import type { ArenaLayout } from '../render/layout';
 import { BotLevel, MAX_SEATS, type ArenaDef, type MatchSetup } from '../core';
 
-export type GameMode = 'solo' | 'faceoff' | 'corners' | 'attract';
+export type GameMode = 'solo' | 'faceoff' | 'corners' | 'attract' | 'party' | 'challenge';
 export type SeatKind = 'human' | 'bot' | 'off';
+
+/**
+ * Which zone layout a match uses. `party` (T5.1) picks one of the first three from its seat setup;
+ * `challenge` (T5.2) is always a single player holding the device (`solo`).
+ */
+export type LayoutKind = 'solo' | 'faceoff' | 'corners' | 'attract';
 
 export interface SeatPlan {
   readonly seat: number;
   readonly kind: SeatKind;
   /** Where the seat's player sits (HUD rotation, zone layout). */
   readonly orientation: SeatOrientation;
+  /** Bot difficulty (`BotLevel` 1–4) of a bot seat; default Normal. */
+  readonly botLevel?: number;
+}
+
+/** The zone layout a fixed mode uses (`party` carries its own: see `PartyPlan.layout`). */
+export function layoutKindOf(mode: GameMode): LayoutKind {
+  if (mode === 'challenge') return 'solo';
+  if (mode === 'party') return 'faceoff';
+  return mode;
 }
 
 /** Zones keep this far from the screen edges (system gestures, PLAN §1.3)… */
@@ -88,6 +103,10 @@ export function seatPlan(mode: GameMode, bots = 0): SeatPlan[] {
         kind: 'bot' as const,
         orientation: 0 as const,
       }));
+    case 'party':
+    case 'challenge':
+      // Plans of these modes come from the party setup / the challenge stage (see `party.ts`).
+      return [{ seat: 0, kind: 'human', orientation: 0 }, OFF(1), OFF(2), OFF(3)];
   }
 }
 
@@ -117,8 +136,23 @@ export function matchSetupFor(mode: GameMode, options: MatchOptions): MatchSetup
  * Keyboard seats for desktop play: solo takes both key sets, face-off and corners one set per
  * seat (seats 1 and 2).
  */
-export function keyBindingsFor(mode: GameMode): KeyBinding[] {
+export function keyBindingsFor(mode: GameMode, plan?: readonly SeatPlan[]): KeyBinding[] {
   if (mode === 'attract') return [];
+  if (mode === 'party' && plan) {
+    // One key set per human seat (the first two); a lone human gets both sets.
+    const humans = plan.filter((p) => p.kind === 'human').map((p) => p.seat);
+    const [wasd, arrows] = DEFAULT_KEY_BINDINGS as [KeyBinding, KeyBinding];
+    if (humans.length === 1) {
+      return [
+        { ...wasd, seat: humans[0] as number },
+        { ...arrows, seat: humans[0] as number },
+      ];
+    }
+    return humans.slice(0, 2).map((seat, i) => ({
+      ...(i === 0 ? wasd : arrows),
+      seat,
+    }));
+  }
   if (mode === 'faceoff' || mode === 'corners') return DEFAULT_KEY_BINDINGS.map((b) => ({ ...b }));
   const [wasd, arrows] = DEFAULT_KEY_BINDINGS as [KeyBinding, KeyBinding];
   return [
@@ -167,31 +201,50 @@ export function splitCorners(area: Rect, gutter: number): { top: Rect; bottom: R
  * no zone).
  */
 export function zonesFor(mode: GameMode, layout: ArenaLayout, bots = 0): ZonePlan {
+  return zonesForPlan(layoutKindOf(mode), layout, seatPlan(mode, bots));
+}
+
+/**
+ * Touch zones of a layout kind for an explicit seat plan: only human seats get a zone, placed by
+ * the layout (solo: the whole device, face-off: seat 0 left strip / seat 1 right strip, corners:
+ * one corner per seat) and oriented as the plan says.
+ */
+export function zonesForPlan(
+  kind: LayoutKind,
+  layout: ArenaLayout,
+  plan: readonly SeatPlan[],
+): ZonePlan {
   const left = stripArea(layout, 'left');
   const right = stripArea(layout, 'right');
   const arena: Rect = { ...layout.arena };
-  if (mode === 'attract') return { zones: [], arena, stickHints: [], left, right };
-  if (mode === 'solo') {
+  const human = (seat: number): boolean => plan[seat]?.kind === 'human';
+  const orientationOf = (seat: number): SeatOrientation => plan[seat]?.orientation ?? 0;
+  if (kind === 'attract') return { zones: [], arena, stickHints: [], left, right };
+  if (kind === 'solo') {
     // One zone over both strips: its seat-left 55 % (the left strip) starts the stick, the bomb
     // button sits in the lower part of the right strip; the arena in between ignores touches.
+    const seat = Math.max(
+      0,
+      plan.findIndex((p) => p.kind === 'human'),
+    );
     const rect: Rect = { x: left.x, y: left.y, w: right.x + right.w - left.x, h: left.h };
     const bombCenter = { x: right.x + right.w / 2, y: right.y + right.h * 0.68 };
     return {
-      zones: [{ seat: 0, rect, orientation: 0, scheme: 'twoThumb', bombCenter }],
+      zones: [{ seat, rect, orientation: 0, scheme: 'twoThumb', bombCenter }],
       arena,
       stickHints: [{ x: left.x + left.w / 2, y: left.y + left.h * 0.62 }],
       left,
       right,
     };
   }
-  if (mode === 'corners') {
+  if (kind === 'corners') {
     // One-finger corner zones; the 4 mm gutter between top and bottom matches the dead band
     // `TouchZones` keeps between neighbouring zones (PLAN §1.3).
     const gutter = CORNER_GUTTER_MM * layout.dpPerMm;
     const l = splitCorners(left, gutter);
     const r = splitCorners(right, gutter);
     const rects = [l.top, r.top, l.bottom, r.bottom];
-    const zones: ZoneSpec[] = seatPlan(mode, bots)
+    const zones: ZoneSpec[] = plan
       .filter((p) => p.kind === 'human')
       .map((p) => ({
         seat: p.seat,
@@ -206,11 +259,13 @@ export function zonesFor(mode: GameMode, layout: ArenaLayout, bots = 0): ZonePla
     }));
     return { zones, arena, stickHints, left, right };
   }
-  const plan = seatPlan(mode);
-  const zones: ZoneSpec[] = [
-    { seat: 0, rect: left, orientation: plan[0]!.orientation, scheme: 'twoThumb' },
-    { seat: 1, rect: right, orientation: plan[1]!.orientation, scheme: 'twoThumb' },
-  ];
+  const zones: ZoneSpec[] = [];
+  if (human(0)) {
+    zones.push({ seat: 0, rect: left, orientation: orientationOf(0), scheme: 'twoThumb' });
+  }
+  if (human(1)) {
+    zones.push({ seat: 1, rect: right, orientation: orientationOf(1), scheme: 'twoThumb' });
+  }
   // Stick area: the seat-left 55 % of the zone; hint at its middle.
   const stickHints = zones.map((z) => {
     const local = localSize(z.rect, z.orientation);

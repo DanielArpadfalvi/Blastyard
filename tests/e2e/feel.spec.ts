@@ -276,7 +276,9 @@ test.describe('settings and game speed', () => {
     await page.keyboard.press('Space');
     await game.advance(page, 10);
     expect(await page.evaluate(() => window.__blastyardGame!.haptics())).toContain('light');
+    // Escape pauses the match (T5.1); leaving goes through the pause card.
     await page.keyboard.press('Escape');
+    await page.getByTestId('pause-leave').click();
     const before = (await page.evaluate(() => window.__blastyardGame!.haptics())).length;
     await page.getByTestId('start-faceoff').click();
     await game.until(page, Phase.PLAYING, 400);

@@ -27,6 +27,8 @@ export const MAX_SEATS = 4;
 export const MAX_BOMBS = 32;
 /** Owner value for bombs / flames without an owning seat. */
 export const NO_OWNER = 255;
+/** Killer value of a `DEATH` event caused by a challenge monster. */
+export const MONSTER_KILLER = 254;
 
 /** Grid tile types (`tiles` layer). Anything but FLOOR blocks movement. */
 export const Tile = {
@@ -128,7 +130,23 @@ export const RuleFlag = {
   GHOSTS: 2,
   FRIENDLY_FIRE: 4,
   TEAMS: 8,
+  /** Warm-up sandbox (party lobby): flames and monsters never eliminate anybody. */
+  HARMLESS: 16,
 } as const;
+
+/** Challenge monster kinds (`monKind`). 0 = no monster in the slot. */
+export const Monster = {
+  NONE: 0,
+  /** Random walk, 1.5 tiles/s. */
+  SNAIL: 1,
+  /** Chases a seat within 5 tiles (path length), 3 tiles/s. */
+  HOUND: 2,
+  /** Random walk that hops over a crate or pillar every 3 s. */
+  HOPPER: 3,
+} as const;
+export type MonsterKind = (typeof Monster)[keyof typeof Monster];
+/** Monster slots in the state. */
+export const MAX_MONSTERS = 6;
 
 /** Bomb flag bits (`bombFlags`). */
 export const BombFlag = {
@@ -188,8 +206,12 @@ export const Hdr = {
   MECH: 22,
   /** Growing pillars: 0 = not started, −1 = all grown, else ticks until the next one grows. */
   GROW_TIMER: 23,
+  /** Challenge flag: cell index of the goal, 0 = none (cell 0 is always wall). */
+  GOAL_CELL: 24,
+  /** `Ability` bits every seat starts each round with. */
+  START_ABILITIES: 25,
 } as const;
-const HDR_LENGTH = 24;
+const HDR_LENGTH = 26;
 
 export interface SimState {
   readonly buffer: ArrayBuffer;
@@ -242,6 +264,24 @@ export interface SimState {
   /** 1 while the seat stands on the pad it was just teleported onto (no instant bounce back). */
   readonly tpLock: Uint8Array;
 
+  // Monsters (challenges), indexed by slot; `monKind` 0 = empty slot (SIM_VERSION 5).
+  readonly monKind: Uint8Array;
+  /** 1 while the monster lives. */
+  readonly monAlive: Uint8Array;
+  /** Tile the monster stands on / is leaving. */
+  readonly monCell: Uint8Array;
+  /** Tile it is walking (or hopping) to; equal to `monCell` while it rests. */
+  readonly monNext: Uint8Array;
+  /** Ticks until it arrives on `monNext`, and the length of the current step. */
+  readonly monTimer: Uint8Array;
+  readonly monSpan: Uint8Array;
+  /** 1 while the current step is a hop. */
+  readonly monJump: Uint8Array;
+  /** Direction of the last step. */
+  readonly monDir: Uint8Array;
+  /** Hopper: ticks since the last hop. */
+  readonly monAux: Uint16Array;
+
   // Bombs, compacted in creation order.
   readonly bombX: Int32Array;
   readonly bombY: Int32Array;
@@ -292,6 +332,7 @@ const FIELDS: ReadonlyArray<readonly [ViewName, FieldKind, number]> = [
   ['bombFuse', 'u16', MAX_BOMBS],
   ['weights', 'u16', PICKUP_KIND_COUNT],
   ['slideLeft', 'u16', MAX_SEATS],
+  ['monAux', 'u16', MAX_MONSTERS],
   ['alive', 'u8', MAX_SEATS],
   ['moveDir', 'u8', MAX_SEATS],
   ['facing', 'u8', MAX_SEATS],
@@ -311,6 +352,14 @@ const FIELDS: ReadonlyArray<readonly [ViewName, FieldKind, number]> = [
   ['wins', 'u8', MAX_SEATS],
   ['slideDir', 'u8', MAX_SEATS],
   ['tpLock', 'u8', MAX_SEATS],
+  ['monKind', 'u8', MAX_MONSTERS],
+  ['monAlive', 'u8', MAX_MONSTERS],
+  ['monCell', 'u8', MAX_MONSTERS],
+  ['monNext', 'u8', MAX_MONSTERS],
+  ['monTimer', 'u8', MAX_MONSTERS],
+  ['monSpan', 'u8', MAX_MONSTERS],
+  ['monJump', 'u8', MAX_MONSTERS],
+  ['monDir', 'u8', MAX_MONSTERS],
   ['bombOwner', 'u8', MAX_BOMBS],
   ['bombRange', 'u8', MAX_BOMBS],
   ['bombPass', 'u8', MAX_BOMBS],

@@ -179,6 +179,7 @@ export function ageInvulnerability(state: SimState): void {
 
 /** Eliminates every alive seat standing in a lethal flame – all at once. */
 export function applyFlameDamage(state: SimState, sink: EventSink): void {
+  if (((state.hdr[Hdr.RULE_FLAGS] as number) & RuleFlag.HARMLESS) !== 0) return;
   let victims = 0;
   for (let s = 0; s < MAX_SEATS; s++) {
     if (!isSeatActive(state, s) || !state.alive[s] || state.invuln[s] !== 0) continue;

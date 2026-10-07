@@ -11,5 +11,8 @@
  * - 4: per-cell floor layers (ice, belts, teleports, tunnels, trampolines, growing pillars) and
  *      the seat / header fields they need (T4.3). Every state hash changes because the buffer
  *      layout changed; classic arenas play exactly as in 3.
+ * - 5: challenge monsters, goal cell, start abilities and the warm-up flag (T5.1, T5.2): the
+ *      state grew (monster slots, two header slots), so every hash changed; matches without
+ *      monsters play exactly as in 4.
  */
-export const SIM_VERSION = 4;
+export const SIM_VERSION = 5;
