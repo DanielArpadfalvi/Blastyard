@@ -8,6 +8,7 @@
 import { Container, Graphics, Rectangle, Text, type Renderer, type Texture } from 'pixi.js';
 import { PICKUP_KIND_COUNT } from '../core';
 import * as P from './palette';
+import { FX_KINDS, Fx } from './effects';
 import { EYE_BLINK, EYE_SCARED, EYE_VARIANTS } from './scene';
 
 /** Logical size of one cell in texture space. */
@@ -19,6 +20,8 @@ export const FUSE_FRAMES = 24;
 export const EYE_TEX_W = 64;
 export const EYE_TEX_H = 40;
 export const BADGE_TEX = 44;
+/** Logical size of a particle texture (particles are scaled relative to the tile). */
+export const FX_TEX = 32;
 
 export interface ArenaTextures {
   readonly floor: readonly [Texture, Texture];
@@ -41,6 +44,12 @@ export interface ArenaTextures {
   readonly flameArm: Texture;
   /** Index = `Pickup` kind (0 unused). */
   readonly pickups: readonly Texture[];
+  /** White particle textures, index = `Fx` kind (tinted per particle). */
+  readonly particles: readonly Texture[];
+  /** Shadow of a falling sudden-death block. */
+  readonly dropShadow: Texture;
+  /** Marker on the cell the next sudden-death block falls on. */
+  readonly dropTarget: Texture;
   destroy(): void;
 }
 
@@ -477,6 +486,95 @@ function drawPickup(kind: number): Graphics {
   return g;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Effects (white, tinted per particle)
+
+/** Soft round blob: stacked discs with rising alpha towards the centre. */
+function drawSoftDisc(core: number): Graphics {
+  const g = new Graphics();
+  const c = FX_TEX / 2;
+  const steps = 5;
+  for (let i = 0; i < steps; i++) {
+    const r = c - 1 - i * ((c - 1 - core) / steps);
+    g.circle(c, c, r).fill({ color: 0xffffff, alpha: 0.22 });
+  }
+  g.circle(c, c, core).fill({ color: 0xffffff, alpha: 0.9 });
+  return g;
+}
+
+function drawParticle(kind: number): Graphics {
+  const c = FX_TEX / 2;
+  switch (kind) {
+    case Fx.SPARK: {
+      const g = drawSoftDisc(5);
+      g.circle(c, c, 4).fill(0xffffff);
+      return g;
+    }
+    case Fx.CHIP:
+      return new Graphics()
+        .roundRect(3, 9, FX_TEX - 6, FX_TEX - 18, 3)
+        .fill(0xffffff)
+        .stroke({ width: 2.5, color: 0x5a4636 });
+    case Fx.STAR: {
+      const g = new Graphics();
+      g.poly([
+        c,
+        1,
+        c + 4,
+        c - 4,
+        FX_TEX - 1,
+        c,
+        c + 4,
+        c + 4,
+        c,
+        FX_TEX - 1,
+        c - 4,
+        c + 4,
+        1,
+        c,
+        c - 4,
+        c - 4,
+      ]).fill(0xffffff);
+      return g;
+    }
+    case Fx.CONFETTI:
+      return new Graphics().rect(4, 10, FX_TEX - 8, FX_TEX - 20).fill(0xffffff);
+    default:
+      // Fire, smoke and dust: soft round puffs.
+      return drawSoftDisc(kind === Fx.FIRE ? 9 : 7);
+  }
+}
+
+function drawDropShadow(): Graphics {
+  const g = new Graphics();
+  g.roundRect(8, 10, TEX - 16, TEX - 16, 14).fill({ color: P.SHADOW, alpha: 0.35 });
+  g.roundRect(16, 18, TEX - 32, TEX - 32, 10).fill({ color: P.SHADOW, alpha: 0.3 });
+  return g;
+}
+
+function drawDropTarget(): Graphics {
+  const g = new Graphics();
+  g.roundRect(6, 6, TEX - 12, TEX - 12, 12).fill({ color: P.BRICK, alpha: 0.22 });
+  // Corner brackets read as "incoming" without colour.
+  const L = 22;
+  const a = 8;
+  const b = TEX - 8;
+  g.moveTo(a, a + L)
+    .lineTo(a, a)
+    .lineTo(a + L, a);
+  g.moveTo(b - L, a)
+    .lineTo(b, a)
+    .lineTo(b, a + L);
+  g.moveTo(b, b - L)
+    .lineTo(b, b)
+    .lineTo(b - L, b);
+  g.moveTo(a + L, b)
+    .lineTo(a, b)
+    .lineTo(a, b - L);
+  g.stroke({ width: 6, color: P.BRICK_DARK, cap: 'round', join: 'round' });
+  return g;
+}
+
 /** Bakes every arena texture once. Call `destroy()` when the renderer goes away. */
 export function bakeArenaTextures(renderer: Renderer): ArenaTextures {
   const all: Texture[] = [];
@@ -496,6 +594,9 @@ export function bakeArenaTextures(renderer: Renderer): ArenaTextures {
   for (let v = 0; v < EYE_VARIANTS; v++) {
     eyes.push(keep(bake(renderer, drawEyes(v), EYE_TEX_W, EYE_TEX_H)));
   }
+  const particles: Texture[] = [];
+  for (let k = 0; k < FX_KINDS; k++)
+    particles.push(keep(bake(renderer, drawParticle(k), FX_TEX, FX_TEX)));
   const puff: Texture[] = [];
   const badge: Texture[] = [];
   for (let s = 0; s < P.SEAT_COLORS.length; s++) {
@@ -518,6 +619,9 @@ export function bakeArenaTextures(renderer: Renderer): ArenaTextures {
     flameCore: cell(drawFlameCore()),
     flameArm: cell(drawFlameArm()),
     pickups,
+    particles,
+    dropShadow: cell(drawDropShadow()),
+    dropTarget: cell(drawDropTarget()),
     destroy(): void {
       for (const t of all) t.destroy(true);
       all.length = 0;

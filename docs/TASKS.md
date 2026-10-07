@@ -22,9 +22,9 @@ Numbers referenced below (tick rate, fuse, speeds, sizes) are defined in `docs/P
 - [ ] **T2.4 Device touch spike** – deploy a web preview (GitHub Pages or LAN dev server) with a multi-touch tester + 4-corner prototype; owner tests on ≥ 1 iPhone, ≥ 1 mid Android, ≥ 1 tablet. AC: `docs/touch-spike.md` records max simultaneous touches, edge-gesture conflicts and zone-size verdict per device; PLAN updated if the 4-corner layout needs changes.
 
 ## M3 – Game feel
-- [ ] **T3.1 Effects** – explosion particles, crate debris, squash & stretch, blink/scared/victory animations, shake (≤ 6 px), flash, sudden-death wall drop; reduced-motion variant. AC: screenshot review; reduced motion disables shake/flash.
-- [ ] **T3.2 Audio** – procedural SFX (fuse with final-0.5 s beeps, blast, pickup, death, sudden death), generative music (menu / match / sudden death +15% tempo), separate music/SFX volume. AC: no audio before first user gesture; unit test for sound event mapping; e2e no console errors.
-- [ ] **T3.3 Feel & perf pass** – haptics via platform (default off in table mode), game speed 70/85/100% (render clock only), auto quality drop when FPS < 50 for 3 s, 60 FPS cap. AC: game-speed run produces the same hash as 100%; perf trace on a 4× CPU-throttled Chromium keeps ≥ 55 FPS mean in a 4-bot round.
+- [x] **T3.1 Effects** – explosion particles, crate debris, squash & stretch, blink/scared/victory animations, shake (≤ 6 px), flash, sudden-death wall drop; reduced-motion variant. AC: screenshot review; reduced motion disables shake/flash.
+- [x] **T3.2 Audio** – procedural SFX (fuse with final-0.5 s beeps, blast, pickup, death, sudden death), generative music (menu / match / sudden death +15% tempo), separate music/SFX volume. AC: no audio before first user gesture; unit test for sound event mapping; e2e no console errors.
+- [x] **T3.3 Feel & perf pass** – haptics via platform (default off in table mode), game speed 70/85/100% (render clock only), auto quality drop when FPS < 50 for 3 s, 60 FPS cap. AC: game-speed run produces the same hash as 100%; perf trace on a 4× CPU-throttled Chromium keeps ≥ 55 FPS mean in a 4-bot round.
 
 ## M4 – Content & bots
 - [ ] **T4.1 All power-ups** – Kick (8 tiles/s slide), Toss (3 tiles over obstacles), Pierce, Shield (+60-tick invulnerability), Max Flame, Jinx (4 effects, 10 s, transferable on touch); Kick/Toss mutually exclusive; drop up to 4 pickups on death. AC: scenario test per power-up; weights match PLAN §1.2 over 10 000 seeded draws (±1.5 pp).

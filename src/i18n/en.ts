@@ -54,6 +54,23 @@ export const en = {
   ttCopied: 'Copied!',
   ttCopyFailed: 'Copy failed – select the text',
   ttReset: 'Reset',
+  settings: 'Settings',
+  settingsTitle: 'Settings',
+  musicVolume: 'Music',
+  sfxVolume: 'Effects',
+  percent: '{n}%',
+  gameSpeed: 'Game speed',
+  gameSpeedHint: 'Slower for younger players – the game itself stays the same',
+  haptics: 'Vibration',
+  hapticsAuto: 'Auto',
+  hapticsOn: 'On',
+  hapticsOff: 'Off',
+  hapticsHint: 'Auto: on when you play alone, off when you share the device',
+  reducedMotion: 'Reduced motion',
+  reducedMotionHint: 'No screen shake or flashes, fewer particles',
+  toggleOn: 'On',
+  toggleOff: 'Off',
+  back: 'Back',
 } as const;
 
 export type TranslationKey = keyof typeof en;

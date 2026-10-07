@@ -6,6 +6,7 @@
  *   wander bot (bot seats) ─┴────────────────────────────┴─ MatchRunner (fixed 60 Hz `step`)
  *                                                            └─ ArenaView + ControlsView (Pixi)
  *                                                            └─ HUD snapshot → Preact overlay
+ *                                                            └─ events → effects, audio, haptics
  *
  * Bot inputs are computed from the state right before each tick and fed to `step` like any
  * other seat byte, so the input log of a match reproduces it exactly. With a manual clock (e2e)
@@ -27,11 +28,15 @@ import { InputController } from '../input/controller';
 import { attachKeyboardInput, attachPointerInput, type PointerClock } from '../input/dom';
 import { KeyboardSeats } from '../input/keyboard';
 import { TouchZones } from '../input/zones';
-import { ArenaView } from '../render/arenaView';
+import type { GameAudio } from '../audio';
+import type { HapticsPort } from '../platform/haptics';
+import { ArenaView, type FxStats } from '../render/arenaView';
+import type { FxSettings } from '../render/effects';
 import { ControlsView, type ControlArea } from '../render/controlsView';
 import { solveLayout, type ArenaLayout } from '../render/layout';
 import { readSafeInsets } from '../render/safeArea';
 import type { ArenaTextures, ControlTextures } from '../render/textures';
+import { HapticsDirector } from './haptics';
 import { RESULT_DELAY_TICKS, hudKey, hudModel, type HudModel } from './hud';
 import { MatchRunner } from './matchRunner';
 import {
@@ -55,6 +60,18 @@ export interface SessionOptions {
   readonly manualClock: boolean;
   /** Gesture clock for tap classification (tests); default: event timestamps. */
   readonly pointerClock?: PointerClock;
+  /** Effect settings (reduced motion, quality). */
+  readonly fx?: FxSettings;
+  /** Real-time clock factor (game speed 0.7 / 0.85 / 1); never changes simulation results. */
+  readonly speed?: number;
+  /** Sound and haptics; a session without them is silent (the attract match). */
+  readonly feel?: SessionFeel;
+}
+
+export interface SessionFeel {
+  readonly audio?: GameAudio;
+  readonly haptics?: HapticsPort;
+  readonly hapticsOn?: boolean;
 }
 
 /** Everything the DOM overlay needs to draw the HUD. */
@@ -98,6 +115,8 @@ export class GameSession {
   private matchEndTick = -1;
   private resultSent = false;
   private inputEnabled = true;
+  private readonly audio: GameAudio | undefined;
+  private readonly haptics: HapticsDirector | undefined;
   private readonly tickerFn: (ticker: { deltaMS: number }) => void;
 
   constructor(
@@ -112,7 +131,7 @@ export class GameSession {
     const state = createState(matchSetupFor(mode, options));
     this.keyboard = new KeyboardSeats(keyBindingsFor(mode));
     this.controller = new InputController([this.zones, this.keyboard]);
-    this.view = new ArenaView(arenaTex);
+    this.view = new ArenaView(arenaTex, options.fx);
     this.controls = new ControlsView(controlTex, arenaTex);
     app.stage.addChild(this.view.root, this.controls.root);
 
@@ -125,8 +144,19 @@ export class GameSession {
         for (const seat of bots) out[seat] = wanderInput(state, seat);
       },
       this.view,
+      options.speed ?? 1,
     );
+    this.audio = options.feel?.audio;
+    const humans = this.plan.filter((p) => p.kind === 'human').map((p) => p.seat);
+    this.haptics = options.feel?.haptics
+      ? new HapticsDirector(options.feel.haptics, humans, options.feel.hapticsOn ?? false)
+      : undefined;
     this.runner.onEvents((events) => this.onEvents(events));
+    const audio = this.audio;
+    if (audio) {
+      this.runner.onTick((st) => audio.onTick(st));
+      audio.match(options.seed);
+    }
     this.runner.setPaused(options.manualClock);
 
     if (mode !== 'attract') {
@@ -156,6 +186,24 @@ export class GameSession {
 
   hud(): HudModel {
     return hudModel(this.runner.state);
+  }
+
+  /** Effects currently on screen. */
+  fxStats(): FxStats {
+    return this.view.getFxStats();
+  }
+
+  setFx(fx: FxSettings): void {
+    this.view.setFx(fx);
+  }
+
+  /** Game speed (real-time clock factor). */
+  setSpeed(speed: number): void {
+    this.runner.loop.setSpeed(speed);
+  }
+
+  setHaptics(enabled: boolean): void {
+    this.haptics?.setEnabled(enabled);
   }
 
   /** Simulates `ticks` ticks now (sampling inputs every tick), then redraws and publishes. */
@@ -200,6 +248,7 @@ export class GameSession {
   }
 
   destroy(): void {
+    this.audio?.quiet();
     this.disableInput();
     this.app.ticker.remove(this.tickerFn);
     this.view.destroy();
@@ -237,6 +286,9 @@ export class GameSession {
 
   private onEvents(events: readonly SimEvent[]): void {
     for (const e of events) if (e.kind === EventKind.MATCH_END) this.matchEndTick = e.tick;
+    this.view.pushEvents(events, this.runner.state);
+    this.audio?.onEvents(events);
+    this.haptics?.onEvents(events);
   }
 
   private publish(): void {

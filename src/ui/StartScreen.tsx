@@ -10,6 +10,7 @@ export interface StartScreenProps {
   onTouchTest?: () => void;
   /** Initial bot seats for the four-corner prototype. */
   cornerBots?: number;
+  onSettings?: () => void;
 }
 
 /** Minimal start screen (T2.3): pick a mode; full menus come in T6.1. */
@@ -18,6 +19,7 @@ export function StartScreen({
   spike = false,
   onTouchTest,
   cornerBots = 0,
+  onSettings,
 }: StartScreenProps) {
   const [bots, setBots] = useState(cornerBots);
   return (
@@ -30,6 +32,16 @@ export function StartScreen({
       >
         {t('switchLanguage')}
       </button>
+      {onSettings && (
+        <button
+          type="button"
+          class="lang-switch settings-switch"
+          data-testid="open-settings"
+          onClick={onSettings}
+        >
+          {t('settings')}
+        </button>
+      )}
       <div class="card start-card">
         <h1 class="title">{t('appTitle')}</h1>
         <p class="tagline">{t('tagline')}</p>

@@ -29,6 +29,7 @@ export class MatchRunner {
   private readonly inputs = new Uint8Array(MAX_SEATS);
   private paused = false;
   private eventListener: ((events: readonly SimEvent[]) => void) | undefined;
+  private tickListener: ((state: ReadonlySimState) => void) | undefined;
 
   constructor(
     readonly state: SimState,
@@ -48,6 +49,11 @@ export class MatchRunner {
     this.eventListener = listener;
   }
 
+  /** Called after every simulated tick (after the events), with the new state (read only). */
+  onTick(listener: ((state: ReadonlySimState) => void) | undefined): void {
+    this.tickListener = listener;
+  }
+
   isPaused(): boolean {
     return this.paused;
   }
@@ -65,6 +71,7 @@ export class MatchRunner {
     this.history.capture(this.state);
     const events = step(this.state, this.inputs);
     if (events.length > 0) this.eventListener?.(events);
+    this.tickListener?.(this.state);
   }
 
   /** Simulates `ticks` ticks immediately (tests, fast-forward) and redraws. */

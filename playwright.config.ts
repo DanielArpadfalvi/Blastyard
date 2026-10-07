@@ -37,6 +37,18 @@ export default defineConfig({
     {
       // Landscape-only game: a phone held sideways or laid flat on the table.
       name: 'landscape-chromium',
+      testIgnore: /perf\.spec\.ts/,
+      use: {
+        ...devices['Pixel 7 landscape'],
+        browserName: 'chromium',
+        launchOptions: executablePath ? { executablePath } : {},
+      },
+    },
+    {
+      // Frame-rate measurement (T3.3): runs after the other tests so nothing competes for the CPU.
+      name: 'perf',
+      testMatch: /perf\.spec\.ts/,
+      dependencies: ['landscape-chromium'],
       use: {
         ...devices['Pixel 7 landscape'],
         browserName: 'chromium',

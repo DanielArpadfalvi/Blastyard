@@ -19,6 +19,9 @@ import {
   Hdr,
   MAX_BOMBS,
   MAX_SEATS,
+  NO_SIDE,
+  Phase,
+  RuleFlag,
   TILE,
   Tile,
 } from '../core';
@@ -40,6 +43,11 @@ export const EYE_BLINK = 5;
 export const EYE_SCARED = 6;
 export const EYE_VARIANTS = 7;
 
+/** A pop blinks white during its final half second (matches the fuse beeps). */
+export const HOT_FUSE_TICKS = 30;
+/** Pop-in animation length after a pop is placed (ticks). */
+export const POP_IN_TICKS = 8;
+
 export interface PlayerView {
   visible: boolean;
   ghost: boolean;
@@ -56,6 +64,10 @@ export interface PlayerView {
   scaleY: number;
   /** Vertical hop offset in tiles (negative = up). */
   hop: number;
+  /** Body tilt in radians (victory dance). */
+  rotation: number;
+  /** Won the round: dances with happy eyes. */
+  victory: boolean;
 }
 
 export interface BombView {
@@ -65,8 +77,10 @@ export interface BombView {
   fuse: number;
   ghost: boolean;
   owner: number;
-  /** Pulse scale (faster and stronger as the fuse runs out). */
+  /** Pulse scale (faster and stronger as the fuse runs out) times the pop-in scale. */
   pulse: number;
+  /** Final half second: drawn with a white blink. */
+  hot: boolean;
 }
 
 export interface FlameView {
@@ -97,6 +111,8 @@ export class Scene {
     scaleX: 1,
     scaleY: 1,
     hop: 0,
+    rotation: 0,
+    victory: false,
   }));
   readonly bombs: BombView[] = Array.from({ length: MAX_BOMBS }, () => ({
     x: 0,
@@ -105,6 +121,7 @@ export class Scene {
     ghost: false,
     owner: 0,
     pulse: 1,
+    hot: false,
   }));
   bombCount = 0;
   readonly flames: FlameView[] = Array.from({ length: CELL_COUNT }, () => ({
@@ -140,6 +157,27 @@ export function popPulse(fuse: number, time: number): number {
   const rate = 0.12 + (1 - fuse) * 0.38;
   const depth = 0.04 + (1 - fuse) * 0.08;
   return 1 + depth * Math.sin(time * rate * Math.PI);
+}
+
+/**
+ * Pop-in scale of a freshly placed pop `age` ticks after placement: grows from 60 % with a small
+ * overshoot (squash & stretch), 1 afterwards.
+ */
+export function popInScale(age: number): number {
+  if (age >= POP_IN_TICKS) return 1;
+  if (age <= 0) return 0.6;
+  const p = age / POP_IN_TICKS;
+  return 0.6 + 0.4 * p + 0.22 * Math.sin(p * Math.PI);
+}
+
+/** True if `seat` belongs to the side that won the round that just ended. */
+export function isRoundWinner(state: ReadonlySimState, seat: number): boolean {
+  const phase = state.hdr[Hdr.PHASE] as number;
+  if (phase !== Phase.ROUND_OVER && phase !== Phase.MATCH_OVER) return false;
+  const winner = state.hdr[Hdr.ROUND_WINNER] as number;
+  if (winner === NO_SIDE || (state.alive[seat] as number) === 0) return false;
+  const teams = ((state.hdr[Hdr.RULE_FLAGS] as number) & RuleFlag.TEAMS) !== 0;
+  return (teams ? (state.team[seat] as number) : seat) === winner;
 }
 
 /** Deterministic blink: a few ticks every `BLINK_PERIOD`, phase-shifted per seat. */
@@ -200,7 +238,16 @@ function fillPlayer(
   out.blink = isBlinking(tick, seat);
   out.scared = alive && isScared(state, Math.floor(cx / TILE), Math.floor(cy / TILE));
   const phase = time + seat * 17;
-  if (ghost) {
+  out.victory = alive && isRoundWinner(state, seat);
+  out.rotation = 0;
+  if (out.victory) {
+    // Victory dance: bouncy hops with a side-to-side wiggle.
+    const s = Math.sin(phase * 0.5);
+    out.hop = -0.22 * Math.abs(Math.sin(phase * 0.25));
+    out.scaleX = 1 - 0.08 * s;
+    out.scaleY = 1 + 0.08 * s;
+    out.rotation = 0.2 * Math.sin(phase * 0.125);
+  } else if (ghost) {
     // Ghosts float: slow vertical bob, no squash.
     out.scaleX = 1;
     out.scaleY = 1;
@@ -259,7 +306,10 @@ export function extractScene(
     view.fuse = fuseFraction(state, b);
     view.ghost = ((state.bombFlags[b] as number) & BombFlag.GHOST) !== 0;
     view.owner = owner;
-    view.pulse = popPulse(view.fuse, time + b * 7);
+    const fuseTicks = state.bombFuse[b] as number;
+    const full = view.ghost ? GHOST_BOMB_FUSE : FUSE_TICKS;
+    view.pulse = popPulse(view.fuse, time + b * 7) * popInScale(full - fuseTicks + a);
+    view.hot = fuseTicks <= HOT_FUSE_TICKS && Math.floor(time / 4) % 2 === 0;
   }
   out.bombCount = n;
 
@@ -282,9 +332,9 @@ export function fuseFrame(fuse: number, frames: number): number {
   return Math.max(1, Math.min(frames, Math.ceil(fuse * frames)));
 }
 
-/** Eye variant for a Puff: blink > scared > facing direction (see `EYE_*`). */
+/** Eye variant for a Puff: blink / victory (happy) > scared > facing direction (see `EYE_*`). */
 export function eyeVariant(view: PlayerView): number {
-  if (view.blink) return EYE_BLINK;
+  if (view.blink || view.victory) return EYE_BLINK;
   if (view.scared) return EYE_SCARED;
   return view.facing >= 1 && view.facing <= 4 ? view.facing : 0;
 }

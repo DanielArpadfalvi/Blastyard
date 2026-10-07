@@ -6,6 +6,8 @@ import {
   FUSE_TICKS,
   GHOST_BOMB_FUSE,
   Hdr,
+  NO_SIDE,
+  Phase,
   Pickup,
   TILE,
   addBomb,
@@ -34,8 +36,12 @@ import {
   fuseFraction,
   fuseFrame,
   isBlinking,
+  isRoundWinner,
   isScared,
+  popInScale,
   popPulse,
+  HOT_FUSE_TICKS,
+  POP_IN_TICKS,
 } from '../../../src/render/scene';
 import { only, tinyArena } from '../core/helpers';
 
@@ -228,10 +234,65 @@ describe('animation helpers', () => {
       scaleX: 1,
       scaleY: 1,
       hop: 0,
+      rotation: 0,
+      victory: false,
     };
     expect(eyeVariant(base)).toBe(Dir.LEFT);
+    expect(eyeVariant({ ...base, scared: true, victory: true })).toBe(EYE_BLINK);
     expect(eyeVariant({ ...base, scared: true })).toBe(EYE_SCARED);
     expect(eyeVariant({ ...base, scared: true, blink: true })).toBe(EYE_BLINK);
+  });
+});
+
+describe('feel animations (T3.1)', () => {
+  it('pops pop in with an overshoot, then rest at full size', () => {
+    expect(popInScale(0)).toBeCloseTo(0.6);
+    const peak = Math.max(...[1, 2, 3, 4, 5, 6, 7].map(popInScale));
+    expect(peak).toBeGreaterThan(1);
+    expect(popInScale(POP_IN_TICKS)).toBe(1);
+    expect(popInScale(500)).toBe(1);
+  });
+
+  it('a pop in its final half second blinks hot', () => {
+    const state = tinyArena(['#######', '#0....#', '#######']);
+    addBomb(state, 4, 1, 0, HOT_FUSE_TICKS + 8, 1);
+    const scene = new Scene();
+    const history = new TickHistory();
+    const hot: boolean[] = [];
+    for (let t = 0; t < 30; t++) {
+      history.capture(state);
+      step(state, only(0, 0));
+      hot.push(extractScene(state, history, 0, scene).bombs[0]!.hot);
+    }
+    expect(hot.slice(0, 7).some(Boolean)).toBe(false);
+    expect(hot.slice(8).some(Boolean)).toBe(true);
+    expect(hot.slice(8).every(Boolean)).toBe(false);
+  });
+
+  it('the round winner dances with happy eyes; losers and running rounds do not', () => {
+    const state = tinyArena(['#######', '#0..1.#', '#######']);
+    const scene = new Scene();
+    expect(isRoundWinner(state, 0)).toBe(false);
+    state.hdr[Hdr.PHASE] = Phase.ROUND_OVER;
+    state.hdr[Hdr.ROUND_WINNER] = 0;
+    state.alive[1] = 0;
+    expect(isRoundWinner(state, 0)).toBe(true);
+    expect(isRoundWinner(state, 1)).toBe(false);
+    const view = extractScene(state, new TickHistory(), 0, scene).players[0]!;
+    expect(view.victory).toBe(true);
+    expect(eyeVariant(view)).toBe(EYE_BLINK);
+    let maxHop = 0;
+    let maxTilt = 0;
+    for (let t = 0; t < 60; t++) {
+      state.hdr[Hdr.TICK] = t;
+      const v = extractScene(state, new TickHistory(), 0, scene).players[0]!;
+      maxHop = Math.max(maxHop, -v.hop);
+      maxTilt = Math.max(maxTilt, Math.abs(v.rotation));
+    }
+    expect(maxHop).toBeGreaterThan(0.15);
+    expect(maxTilt).toBeGreaterThan(0.1);
+    state.hdr[Hdr.ROUND_WINNER] = NO_SIDE;
+    expect(isRoundWinner(state, 0)).toBe(false);
   });
 });
 

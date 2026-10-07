@@ -5,6 +5,8 @@
  *
  *   arena=garden|crossroads|courtyard|bastions   seed=<int>   seats=1–4
  *   script=demo|idle   pause (start paused)   tick=<n> (fast-forward)   speed=0.25–2
+ *   scene=chain|suddenDeath (showcase set-up, see `showcase.ts`)
+ *   motion=reduced (no shake / flash)   quality=0–2 (effect quality, default 2)
  *
  * Under `?test` only, `window.__blastyard` exposes a small test hook (see {@link ArenaTestHook}).
  */
@@ -22,12 +24,14 @@ import {
   type ArenaDef,
 } from '../core';
 import { CLASSIC_ARENAS } from '../content/arenas/classic';
-import { ArenaView, type RenderStats } from '../render/arenaView';
+import { ArenaView, type FxStats, type RenderStats } from '../render/arenaView';
+import type { EffectQuality, FxSettings } from '../render/effects';
 import { solveLayout, type ArenaLayout } from '../render/layout';
 import { readSafeInsets } from '../render/safeArea';
 import { bakeArenaTextures } from '../render/textures';
 import { demoInput } from './demoScript';
 import { MatchRunner, idleInputs, type InputProvider } from './matchRunner';
+import { applyShowcase, parseShowcase, type ShowcaseId } from './showcase';
 
 export interface ArenaViewOptions {
   readonly arena: ArenaDef;
@@ -38,6 +42,8 @@ export interface ArenaViewOptions {
   readonly startTick: number;
   readonly speed: number;
   readonly testHook: boolean;
+  readonly scene: ShowcaseId | null;
+  readonly fx: FxSettings;
 }
 
 /** What the state itself says should be visible (compared against `RenderStats` in e2e). */
@@ -65,6 +71,8 @@ export interface ArenaTestHook {
   layout(): ArenaLayout;
   renderStats(): RenderStats;
   stateCounts(): StateCounts;
+  /** Effects on screen right now. */
+  fx(): FxStats;
 }
 
 declare global {
@@ -99,6 +107,11 @@ export function parseArenaViewOptions(search: string): ArenaViewOptions {
     startTick: intParam(q, 'tick', 0, 0, 100_000),
     speed: Number.isFinite(speed) ? speed : 1,
     testHook: q.has('test'),
+    scene: parseShowcase(q.get('scene')),
+    fx: {
+      reducedMotion: q.get('motion') === 'reduced',
+      quality: intParam(q, 'quality', 2, 0, 2) as EffectQuality,
+    },
   };
 }
 
@@ -139,16 +152,18 @@ export function startArenaView(app: Application, search: string): MatchRunner {
     arena: opts.arena,
     seats: Array.from({ length: MAX_SEATS }, (_, s) => s < opts.seats),
   });
+  if (opts.scene) applyShowcase(state, opts.scene);
   const textures = bakeArenaTextures(app.renderer);
-  const view = new ArenaView(textures);
+  const view = new ArenaView(textures, opts.fx);
   app.stage.addChild(view.root);
   const provider: InputProvider =
-    opts.script === 'demo'
+    opts.script === 'demo' && opts.scene === null
       ? (st, out) => {
           for (let s = 0; s < MAX_SEATS; s++) out[s] = demoInput(st, s);
         }
       : idleInputs;
   const runner = new MatchRunner(state, provider, view, opts.speed);
+  runner.onEvents((events) => view.pushEvents(events, state));
 
   let layout = solveLayout({ width: app.screen.width, height: app.screen.height });
   let lastKey = '';
@@ -184,6 +199,7 @@ export function startArenaView(app: Application, search: string): MatchRunner {
       layout: () => layout,
       renderStats: () => view.getStats(),
       stateCounts: () => countStateVisibles(runner),
+      fx: () => view.getFxStats(),
     };
   }
   return runner;

@@ -521,3 +521,87 @@ body {
   right: 0;
   transform: translate(0, -0.3rem);
 }
+
+/* ------------------------------------------------------------------ settings (T3.2/T3.3) */
+
+.settings-switch {
+  right: auto;
+  left: calc(var(--safe-left) + 0.8rem);
+}
+
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 94vh;
+  overflow-y: auto;
+  text-align: left;
+}
+
+.settings-title {
+  margin: 0 0 0.4rem;
+  font-size: clamp(1.3rem, 4.5vh, 2rem);
+  font-weight: 900;
+  color: #ffd23f;
+  text-align: center;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  min-height: 2.6rem;
+}
+
+.setting-name {
+  flex: 1 1 auto;
+  font-weight: 800;
+}
+
+.setting-row input[type='range'] {
+  flex: 0 1 12rem;
+  min-width: 7rem;
+  accent-color: #ffb627;
+  height: 2rem;
+}
+
+.setting-value {
+  min-width: 3.2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.setting-hint {
+  margin: -0.25rem 0 0.25rem;
+  font-size: clamp(0.72rem, 1.9vh, 0.9rem);
+  opacity: 0.7;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 3px solid #2b2118;
+  border-radius: 0.8rem;
+  overflow: hidden;
+}
+
+.segment {
+  min-width: 3.4rem;
+  min-height: 2.4rem;
+  padding: 0.3rem 0.8rem;
+  border: none;
+  border-left: 2px solid #2b2118;
+  background: rgba(244, 241, 230, 0.9);
+  color: #2b2118;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.segment:first-child {
+  border-left: none;
+}
+
+.segment-on {
+  background: #ffb627;
+  font-weight: 900;
+}
