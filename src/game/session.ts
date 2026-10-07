@@ -128,6 +128,7 @@ export class GameSession {
     this.keyboard = new KeyboardSeats(keyBindingsFor(mode));
     this.controller = new InputController([this.zones, this.keyboard]);
     this.view = new ArenaView(arenaTex, options.fx);
+    this.view.bindArena(state, options.arena.theme);
     this.controls = new ControlsView(controlTex, arenaTex);
     app.stage.addChild(this.view.root, this.controls.root);
 

@@ -39,10 +39,14 @@ export const EYE_WHITE = 0xffffff;
 export const PUPIL = 0x1d1712;
 export const GHOST_TINT = 0xd8e4ff;
 
-/** Seat colours: coral, sky blue, sunflower, lilac. */
-export const SEAT_COLORS: readonly number[] = [0xff6b5b, 0x4fa3ff, 0xffd23f, 0xb57bff];
+/**
+ * Seat colours: coral, sky blue, sunflower, violet. Chosen to differ in brightness as well as hue
+ * (relative luminance ≈ .33 / .48 / .68 / .19), so seats stay apart even in grayscale – on top of
+ * the badge shape and number.
+ */
+export const SEAT_COLORS: readonly number[] = [0xff6b5b, 0x6dc0ff, 0xffd23f, 0x8f5bdc];
 /** Darker shade per seat for silhouette details. */
-export const SEAT_SHADES: readonly number[] = [0xc9483b, 0x2f74c4, 0xd9a514, 0x8a50d6];
+export const SEAT_SHADES: readonly number[] = [0xc9483b, 0x3d8fd9, 0xd9a514, 0x6a3cb0];
 
 export const PICKUP_BG = 0xfff6e0;
 export const JINX_BG = 0x5b2a86;

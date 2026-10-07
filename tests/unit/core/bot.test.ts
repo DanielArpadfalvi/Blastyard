@@ -7,6 +7,8 @@ import {
   FUSE_TICKS,
   Hdr,
   Phase,
+  RuleFlag,
+  SD_PAUSE_AT,
   ReplayRecorder,
   RngStream,
   Tile,
@@ -217,4 +219,39 @@ describe('bot league (smoke)', () => {
     const r = runPairing(BotLevel.EXPERT, BotLevel.EASY, 6, 1);
     expect(r.winsA).toBeGreaterThan(r.winsB);
   }, 60_000);
+});
+
+describe('bot: final 5x5 phase', () => {
+  /** A dead-end corridor: placing a pop gives no escape, an opponent stands in the blast line. */
+  function corridor(finalPhase: boolean, opponents: number): SimState {
+    const s = tinyArena(['#########', '#0.1.2.3#', '#########']);
+    for (let seat = 0; seat < 4; seat++)
+      setBotLevel(s, seat, seat < opponents + 1 ? BotLevel.NORMAL : 0);
+    if (opponents < 3) s.alive[3] = 0;
+    if (opponents < 2) s.alive[2] = 0;
+    s.hdr[Hdr.RULE_FLAGS] = RuleFlag.SUDDEN_DEATH;
+    s.hdr[Hdr.ROUND_TICKS] = 600;
+    s.hdr[Hdr.ROUND_TIME] = 0;
+    s.hdr[Hdr.SD_INDEX] = finalPhase ? SD_PAUSE_AT : 10;
+    s.hdr[Hdr.SD_TIMER] = 500;
+    return s;
+  }
+
+  function seatZeroPops(s: SimState, ticks: number): number {
+    let pops = 0;
+    for (let t = 0; t < ticks; t++) {
+      for (const e of step(s, NONE)) if (e.kind === EventKind.BOMB_PLACED && e.seat === 0) pops++;
+      if (s.alive[0] === 0) break;
+    }
+    return pops;
+  }
+
+  it('with three or more survivors a bot bombs an opponent in line even without an escape', () => {
+    expect(seatZeroPops(corridor(true, 3), 120)).toBeGreaterThan(0);
+  });
+
+  it('keeps the safe-placement check before the final phase and in duels', () => {
+    expect(seatZeroPops(corridor(false, 3), 120)).toBe(0);
+    expect(seatZeroPops(corridor(true, 1), 120)).toBe(0);
+  });
 });

@@ -18,6 +18,7 @@
 
 import { bombAt, canPassBomb, kickBomb } from './bombs';
 import type { EventSink } from './events';
+import { ICE_SLIDE } from './floorFx';
 import {
   DIR_DX,
   DIR_DY,
@@ -30,10 +31,12 @@ import {
 } from './input';
 import {
   Ability,
+  FloorFx,
   Jinx,
   Tile,
   cellIndex,
   inBounds,
+  playerCell,
   tileCenter,
   toTile,
   type SimState,
@@ -72,6 +75,7 @@ function advance(
   dir: Direction,
   budget: number,
   sink?: EventSink,
+  allowKick = true,
 ): number {
   const horiz = isHorizontal(dir);
   const sign = dir === Dir.RIGHT || dir === Dir.DOWN ? 1 : -1;
@@ -87,7 +91,11 @@ function advance(
     target =
       sign > 0 ? Math.min(target, Math.max(pos, center)) : Math.max(target, Math.min(pos, center));
     // Kick: standing at the centre, pushing against a resting bomb sets it sliding.
-    if (target === center && ((state.abilities[seat] as number) & Ability.KICK) !== 0) {
+    if (
+      allowKick &&
+      target === center &&
+      ((state.abilities[seat] as number) & Ability.KICK) !== 0
+    ) {
       const b = bombAt(state, nx, ny);
       if (b >= 0) kickBomb(state, b, dir, seat, sink);
     }
@@ -130,23 +138,66 @@ function tryDirection(
   return true;
 }
 
+/** Carries `seat` along a conveyor belt; only while it is centred across the belt. */
+export function conveyPlayer(state: SimState, seat: number, dir: Direction, budget: number): void {
+  const horiz = isHorizontal(dir);
+  const perp = horiz ? (state.py[seat] as number) : (state.px[seat] as number);
+  if (perp !== tileCenter(toTile(perp))) return;
+  advance(state, seat, dir, budget, undefined, false);
+}
+
+function onIce(state: SimState, seat: number): boolean {
+  return state.floor[playerCell(state, seat)] === FloorFx.ICE;
+}
+
+/** Ice: keeps gliding (up to `ICE_SLIDE` subunits in total) after the player let go. */
+function glide(state: SimState, seat: number): void {
+  const left = state.slideLeft[seat] as number;
+  if (left === 0) return;
+  const dir = state.slideDir[seat] as Direction;
+  if (!onIce(state, seat)) {
+    state.slideLeft[seat] = 0;
+    return;
+  }
+  const want = Math.min(left, playerSpeed(state, seat));
+  const moved = advance(state, seat, dir, want, undefined, false);
+  state.slideLeft[seat] = moved < want ? 0 : left - moved;
+  state.moveDir[seat] = moved > 0 ? dir : Dir.NONE;
+}
+
 /** Moves one seat for one tick from its input byte. */
 export function movePlayer(state: SimState, seat: number, input: number, sink?: EventSink): void {
+  if (!moveByInput(state, seat, input, sink)) {
+    if (inputMain(input) === Dir.NONE) glide(state, seat);
+    else state.slideLeft[seat] = 0;
+    return;
+  }
+  const dir = state.moveDir[seat] as Direction;
+  if (onIce(state, seat)) {
+    state.slideLeft[seat] = ICE_SLIDE;
+    state.slideDir[seat] = dir;
+  } else {
+    state.slideLeft[seat] = 0;
+  }
+}
+
+/** Input-driven movement of one tick. Returns true when the seat moved. */
+function moveByInput(state: SimState, seat: number, input: number, sink?: EventSink): boolean {
   const main = inputMain(input);
   if (main === Dir.NONE) {
     state.moveDir[seat] = Dir.NONE;
-    return;
+    return false;
   }
   state.facing[seat] = main;
   const budget = playerSpeed(state, seat);
-  if (tryDirection(state, seat, main, budget, sink)) return;
+  if (tryDirection(state, seat, main, budget, sink)) return true;
   const secondary = inputSecondary(input);
   if (
     secondary !== Dir.NONE &&
     secondary !== main &&
     tryDirection(state, seat, secondary, budget, sink)
   ) {
-    return;
+    return true;
   }
   const prev = state.moveDir[seat] as Direction;
   if (
@@ -154,7 +205,8 @@ export function movePlayer(state: SimState, seat: number, input: number, sink?: 
     prev !== secondary &&
     tryDirection(state, seat, prev, budget, sink)
   ) {
-    return;
+    return true;
   }
   state.moveDir[seat] = Dir.NONE;
+  return false;
 }

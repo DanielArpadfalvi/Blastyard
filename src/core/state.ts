@@ -56,6 +56,38 @@ export const Pickup = {
 export type PickupKind = (typeof Pickup)[keyof typeof Pickup];
 export const PICKUP_KIND_COUNT = 9;
 
+/**
+ * Per-cell floor mechanic (`floor` layer, static for a whole match; SIM_VERSION 4). The belt kinds
+ * 2–5 are `Dir + 1` (up, right, down, left): see `beltDir`.
+ */
+export const FloorFx = {
+  NONE: 0,
+  /** Slippery: a player who lets go keeps gliding up to `ICE_SLIDE` subunits. */
+  ICE: 1,
+  BELT_UP: 2,
+  BELT_RIGHT: 3,
+  BELT_DOWN: 4,
+  BELT_LEFT: 5,
+  /** Paired pad (`partner` layer holds the other pad). */
+  TELEPORT: 6,
+  /** Border mouth, paired with the opposite border mouth. */
+  TUNNEL: 7,
+  /** A bomb placed on it, or sliding onto it, hops `TRAMPOLINE_HOP` tiles. */
+  TRAMPOLINE: 8,
+  /** Grows into a pillar once the round passes 75% of its time. */
+  GROW: 9,
+} as const;
+export type FloorFxKind = (typeof FloorFx)[keyof typeof FloorFx];
+
+/** Mechanic presence bits (`hdr[Hdr.MECH]`), so classic arenas skip every floor pass. */
+export const Mech = {
+  ICE: 1,
+  BELT: 2,
+  TELEPORT: 4,
+  TRAMPOLINE: 8,
+  GROW: 16,
+} as const;
+
 /** Player ability bits (`abilities`). */
 export const Ability = {
   KICK: 1,
@@ -106,6 +138,8 @@ export const BombFlag = {
   GHOST: 2,
   /** Placed by a seat with the Pierce power-up: the flame passes through crates. */
   PIERCE: 4,
+  /** Carried by a conveyor belt (slides at belt speed instead of kick speed). */
+  BELT: 8,
 } as const;
 
 /** `aiGoal` value for "no goal". */
@@ -150,8 +184,12 @@ export const Hdr = {
   CRATE_DENSITY: 20,
   /** Bot difficulty per seat, 3 bits each (seat `s` at bit `3 s`); 0 = human / no bot. */
   BOT_CFG: 21,
+  /** `Mech` bits present in the arena (constant for the match). */
+  MECH: 22,
+  /** Growing pillars: 0 = not started, −1 = all grown, else ticks until the next one grows. */
+  GROW_TIMER: 23,
 } as const;
-const HDR_LENGTH = 22;
+const HDR_LENGTH = 24;
 
 export interface SimState {
   readonly buffer: ArrayBuffer;
@@ -198,6 +236,11 @@ export interface SimState {
   readonly spawnCell: Uint8Array;
   /** Rounds won, indexed by side (seat in free-for-all, team id in team mode). */
   readonly wins: Uint8Array;
+  /** Subunits of ice glide left (0 = not gliding) and its direction. */
+  readonly slideLeft: Uint16Array;
+  readonly slideDir: Uint8Array;
+  /** 1 while the seat stands on the pad it was just teleported onto (no instant bounce back). */
+  readonly tpLock: Uint8Array;
 
   // Bombs, compacted in creation order.
   readonly bombX: Int32Array;
@@ -226,6 +269,10 @@ export interface SimState {
   readonly layout: Uint8Array;
   /** Power-up weights per `Pickup` kind − 1 (resolved from arena / rules). */
   readonly weights: Uint16Array;
+  /** `FloorFx` per cell (static). */
+  readonly floor: Uint8Array;
+  /** Teleport / tunnel pairing: cell index of the other pad (0 = none; cell 0 is always wall). */
+  readonly partner: Uint8Array;
 }
 
 type FieldKind = 'i32' | 'u32' | 'u16' | 'u8';
@@ -244,6 +291,7 @@ const FIELDS: ReadonlyArray<readonly [ViewName, FieldKind, number]> = [
   ['ghostCd', 'u16', MAX_SEATS],
   ['bombFuse', 'u16', MAX_BOMBS],
   ['weights', 'u16', PICKUP_KIND_COUNT],
+  ['slideLeft', 'u16', MAX_SEATS],
   ['alive', 'u8', MAX_SEATS],
   ['moveDir', 'u8', MAX_SEATS],
   ['facing', 'u8', MAX_SEATS],
@@ -261,6 +309,8 @@ const FIELDS: ReadonlyArray<readonly [ViewName, FieldKind, number]> = [
   ['ghost', 'u8', MAX_SEATS],
   ['spawnCell', 'u8', MAX_SEATS],
   ['wins', 'u8', MAX_SEATS],
+  ['slideDir', 'u8', MAX_SEATS],
+  ['tpLock', 'u8', MAX_SEATS],
   ['bombOwner', 'u8', MAX_BOMBS],
   ['bombRange', 'u8', MAX_BOMBS],
   ['bombPass', 'u8', MAX_BOMBS],
@@ -273,6 +323,8 @@ const FIELDS: ReadonlyArray<readonly [ViewName, FieldKind, number]> = [
   ['flame', 'u8', CELL_COUNT],
   ['flameOwner', 'u8', CELL_COUNT],
   ['layout', 'u8', CELL_COUNT],
+  ['floor', 'u8', CELL_COUNT],
+  ['partner', 'u8', CELL_COUNT],
 ];
 
 const BYTES: Record<FieldKind, number> = { i32: 4, u32: 4, u16: 2, u8: 1 };

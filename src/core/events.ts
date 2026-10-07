@@ -47,6 +47,10 @@ export const EventKind = {
   JINX_CAUGHT: 18,
   /** The curse jumped from `seat` to seat `value` (`cell` = the receiver's tile). */
   JINX_PASSED: 19,
+  /** `seat` was teleported from `value` (cell) onto `cell` (a pad or a tunnel mouth). */
+  TELEPORTED: 20,
+  /** A growing pillar rose on `cell` (Rubble arena). */
+  PILLAR_GROWN: 21,
 } as const;
 export type EventKindId = (typeof EventKind)[keyof typeof EventKind];
 

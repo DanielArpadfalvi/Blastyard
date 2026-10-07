@@ -67,6 +67,7 @@ export function cueIdFor(e: SimEvent): CueId | null {
     case EventKind.PICKUP_COLLECTED:
     case EventKind.JINX_CAUGHT:
     case EventKind.JINX_PASSED:
+    case EventKind.TELEPORTED:
       return CueId.PICKUP;
     case EventKind.PICKUP_BURNED:
     case EventKind.SHIELD_BROKEN:
@@ -76,6 +77,7 @@ export function cueIdFor(e: SimEvent): CueId | null {
     case EventKind.SUDDEN_DEATH:
       return CueId.SUDDEN_DEATH;
     case EventKind.BLOCK_DROPPED:
+    case EventKind.PILLAR_GROWN:
       return CueId.BLOCK_DROP;
     case EventKind.GHOST_BOMB:
       return CueId.GHOST_BOMB;

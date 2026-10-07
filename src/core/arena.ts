@@ -3,7 +3,10 @@
  *
  * Format (13 rows × 13 chars, JSON-compatible data in `src/content/arenas`):
  *   `#` wall · `o` pillar · `.` floor (never a crate) · `+` fixed crate · `?` crate candidate ·
- *   `1`–`4` spawn (floor).
+ *   `1`–`4` spawn (floor). Floor mechanics (T4.3) are floor cells with a `floor` effect:
+ *   `~` ice · `^ > v <` conveyor belt · `T` / `U` teleport pair (exactly two of each) · `=` tunnel
+ *   mouth (on the outer ring, paired with the opposite mouth) · `b` trampoline · `g` growing
+ *   pillar.
  * Generation: exactly `crateDensity`% of the candidates (rounded) become crates – picked by a
  * seeded partial shuffle – then every crate hides a power-up with `powerupChance`% probability,
  * kind drawn by integer weights. Crates use the ARENA stream, power-ups the LOOT stream.
@@ -12,8 +15,10 @@
 import { RngStream, randInt, randPercent, randWeighted } from './rng';
 import {
   CELL_COUNT,
+  FloorFx,
   GRID_H,
   GRID_W,
+  Mech,
   NO_OWNER,
   PICKUP_KIND_COUNT,
   Tile,
@@ -33,6 +38,10 @@ export const SPAWN_COUNT = 4;
  */
 export const DEFAULT_POWERUP_WEIGHTS: readonly number[] = [26, 26, 16, 8, 6, 5, 5, 3, 5];
 
+/** Floor mechanics an arena can declare (`ArenaDef.mechanics`, checked against the layout). */
+export const MECHANIC_IDS = ['ice', 'belt', 'teleport', 'tunnel', 'trampoline', 'grow'] as const;
+export type MechanicId = (typeof MECHANIC_IDS)[number];
+
 export interface ArenaDef {
   readonly id: string;
   readonly theme: string;
@@ -42,6 +51,8 @@ export interface ArenaDef {
   readonly crateDensity?: number;
   /** Per-arena power-up weights (length 9), overriding the rule set. */
   readonly powerupWeights?: readonly number[];
+  /** Floor mechanics the layout uses (must match the layout exactly; informs UI and docs). */
+  readonly mechanics?: readonly MechanicId[];
 }
 
 /** Static cell classes of a parsed layout. */
@@ -59,6 +70,12 @@ export interface ParsedArena {
   readonly cells: Uint8Array;
   /** Cell index of spawn 1–4 (array index = spawn number − 1); −1 when missing. */
   readonly spawns: readonly number[];
+  /** `FloorFx` per cell. */
+  readonly fx: Uint8Array;
+  /** Partner pad per teleport / tunnel cell (0 = none). */
+  readonly partner: Uint8Array;
+  /** `Mech` bits the layout uses. */
+  readonly mech: number;
 }
 
 export type ArenaErrorCode =
@@ -70,7 +87,8 @@ export type ArenaErrorCode =
   | 'weights'
   | 'safe-l'
   | 'connectivity'
-  | 'fairness';
+  | 'fairness'
+  | 'mechanic';
 
 export interface ArenaError {
   readonly code: ArenaErrorCode;
@@ -89,6 +107,20 @@ const CHAR_TO_CELL: Readonly<Record<string, LayoutCellType>> = {
   '.': LayoutCell.FLOOR,
   '+': LayoutCell.FIXED_CRATE,
   '?': LayoutCell.CANDIDATE,
+};
+
+/** Floor-effect characters (the cell itself is plain floor). */
+const CHAR_TO_FX: Readonly<Record<string, number>> = {
+  '~': FloorFx.ICE,
+  '^': FloorFx.BELT_UP,
+  '>': FloorFx.BELT_RIGHT,
+  v: FloorFx.BELT_DOWN,
+  '<': FloorFx.BELT_LEFT,
+  T: FloorFx.TELEPORT,
+  U: FloorFx.TELEPORT,
+  '=': FloorFx.TUNNEL,
+  b: FloorFx.TRAMPOLINE,
+  g: FloorFx.GROW,
 };
 
 /** L orientations tried for the spawn safe zone, in this order: (dx, dy). */
@@ -126,6 +158,9 @@ export function parseArena(def: ArenaDef): { parsed: ParsedArena | null; errors:
     return { parsed: null, errors };
   }
   const cells = new Uint8Array(CELL_COUNT);
+  const fx = new Uint8Array(CELL_COUNT);
+  const partner = new Uint8Array(CELL_COUNT);
+  const pads: Record<string, number[]> = { T: [], U: [] };
   const spawns = [-1, -1, -1, -1];
   for (let y = 0; y < GRID_H; y++) {
     const row = def.rows[y] as string;
@@ -141,6 +176,13 @@ export function parseArena(def: ArenaDef): { parsed: ParsedArena | null; errors:
         cells[i] = LayoutCell.FLOOR;
         continue;
       }
+      const effect = CHAR_TO_FX[ch];
+      if (effect !== undefined) {
+        cells[i] = LayoutCell.FLOOR;
+        fx[i] = effect;
+        pads[ch]?.push(i);
+        continue;
+      }
       const cell = CHAR_TO_CELL[ch];
       if (cell === undefined) {
         errors.push({ code: 'char', message: `unknown tile '${ch}' at (${x}, ${y})` });
@@ -150,7 +192,60 @@ export function parseArena(def: ArenaDef): { parsed: ParsedArena | null; errors:
       }
     }
   }
-  return { parsed: { cells, spawns }, errors };
+  for (const ch of ['T', 'U']) {
+    const list = pads[ch] as number[];
+    if (list.length === 0) continue;
+    if (list.length !== 2) {
+      errors.push({ code: 'mechanic', message: `teleport '${ch}' needs exactly two pads` });
+      continue;
+    }
+    partner[list[0] as number] = list[1] as number;
+    partner[list[1] as number] = list[0] as number;
+  }
+  let mech = 0;
+  for (let i = 0; i < CELL_COUNT; i++) {
+    const effect = fx[i] as number;
+    if (effect === FloorFx.TUNNEL) {
+      mech |= Mech.TELEPORT;
+      const x = i % GRID_W;
+      const y = (i - x) / GRID_W;
+      const onX = x === 0 || x === GRID_W - 1;
+      const onY = y === 0 || y === GRID_H - 1;
+      if (onX === onY) {
+        errors.push({ code: 'mechanic', message: `tunnel at (${x}, ${y}) must be on a side` });
+        continue;
+      }
+      const other = cellIndex(onX ? GRID_W - 1 - x : x, onY ? GRID_H - 1 - y : y);
+      if (fx[other] !== FloorFx.TUNNEL) {
+        errors.push({ code: 'mechanic', message: `tunnel at (${x}, ${y}) has no opposite mouth` });
+        continue;
+      }
+      partner[i] = other;
+    } else if (effect === FloorFx.TELEPORT) mech |= Mech.TELEPORT;
+    else if (effect === FloorFx.ICE) mech |= Mech.ICE;
+    else if (effect >= FloorFx.BELT_UP && effect <= FloorFx.BELT_LEFT) mech |= Mech.BELT;
+    else if (effect === FloorFx.TRAMPOLINE) mech |= Mech.TRAMPOLINE;
+    else if (effect === FloorFx.GROW) mech |= Mech.GROW;
+  }
+  return { parsed: { cells, spawns, fx, partner, mech }, errors };
+}
+
+/** Mechanic ids present in a parsed layout (for the `mechanics` declaration check). */
+function mechanicIds(parsed: ParsedArena): MechanicId[] {
+  const out: MechanicId[] = [];
+  let tunnel = false;
+  let teleport = false;
+  for (let i = 0; i < CELL_COUNT; i++) {
+    if (parsed.fx[i] === FloorFx.TUNNEL) tunnel = true;
+    else if (parsed.fx[i] === FloorFx.TELEPORT) teleport = true;
+  }
+  if ((parsed.mech & Mech.ICE) !== 0) out.push('ice');
+  if ((parsed.mech & Mech.BELT) !== 0) out.push('belt');
+  if (teleport) out.push('teleport');
+  if (tunnel) out.push('tunnel');
+  if ((parsed.mech & Mech.TRAMPOLINE) !== 0) out.push('trampoline');
+  if ((parsed.mech & Mech.GROW) !== 0) out.push('grow');
+  return out;
 }
 
 /** The three cells (spawn, horizontal arm, vertical arm) of the first open safe L, or null. */
@@ -161,7 +256,12 @@ export function spawnSafeL(parsed: ParsedArena, spawn: number): readonly number[
     if (!inBounds(sx + dx, sy) || !inBounds(sx, sy + dy)) continue;
     const arm1 = cellIndex(sx + dx, sy);
     const arm2 = cellIndex(sx, sy + dy);
-    if (parsed.cells[arm1] === LayoutCell.FLOOR && parsed.cells[arm2] === LayoutCell.FLOOR) {
+    if (
+      parsed.cells[arm1] === LayoutCell.FLOOR &&
+      parsed.cells[arm2] === LayoutCell.FLOOR &&
+      parsed.fx[arm1] === FloorFx.NONE &&
+      parsed.fx[arm2] === FloorFx.NONE
+    ) {
       return [spawn, arm1, arm2];
     }
   }
@@ -196,16 +296,26 @@ function bfs(cells: Uint8Array, start: number): Int16Array {
 
 /**
  * Fairness signature of a spawn: for each BFS distance, how many floor / fixed-crate / candidate
- * cells lie at that distance. Spawns of a fair arena have identical signatures.
+ * cells (and floor effects) lie at that distance. Spawns of a fair arena have identical signatures.
  */
-function spawnSignature(cells: Uint8Array, spawn: number): string {
+function fxClass(effect: number): number {
+  if (effect === FloorFx.NONE) return 0;
+  if (effect === FloorFx.ICE) return 1;
+  if (effect <= FloorFx.BELT_LEFT) return 2;
+  if (effect === FloorFx.TELEPORT || effect === FloorFx.TUNNEL) return 3;
+  return effect === FloorFx.TRAMPOLINE ? 4 : 5;
+}
+
+function spawnSignature(cells: Uint8Array, fx: Uint8Array, spawn: number): string {
   const dist = bfs(cells, spawn);
   const counts: number[] = [];
   for (let i = 0; i < CELL_COUNT; i++) {
     const d = dist[i] as number;
     if (d < 0) continue;
     const cell = cells[i] as number;
-    const slot = d * 3 + (cell === LayoutCell.FLOOR ? 0 : cell === LayoutCell.FIXED_CRATE ? 1 : 2);
+    const slot =
+      (d * 3 + (cell === LayoutCell.FLOOR ? 0 : cell === LayoutCell.FIXED_CRATE ? 1 : 2)) * 6 +
+      fxClass(fx[i] as number);
     counts[slot] = (counts[slot] ?? 0) + 1;
   }
   return Array.from(counts, (c) => c ?? 0).join(',');
@@ -230,13 +340,13 @@ function validWeights(weights: ArrayLike<number>): boolean {
 export function validateArena(def: ArenaDef): ArenaValidation {
   const { parsed, errors } = parseArena(def);
   if (!parsed) return { ok: false, errors, parsed: null };
-  const { cells, spawns } = parsed;
+  const { cells, spawns, fx } = parsed;
 
   for (let i = 0; i < CELL_COUNT; i++) {
     const x = i % GRID_W;
     const y = (i - x) / GRID_W;
     const edge = x === 0 || y === 0 || x === GRID_W - 1 || y === GRID_H - 1;
-    if (edge && cells[i] !== LayoutCell.WALL) {
+    if (edge && cells[i] !== LayoutCell.WALL && parsed.fx[i] !== FloorFx.TUNNEL) {
       errors.push({ code: 'border', message: `outer ring must be wall at (${x}, ${y})` });
       break;
     }
@@ -248,6 +358,29 @@ export function validateArena(def: ArenaDef): ArenaValidation {
   }
   if (def.powerupWeights && !validWeights(def.powerupWeights)) {
     errors.push({ code: 'weights', message: 'powerupWeights: 9 non-negative integers, sum > 0' });
+  }
+
+  const declared = def.mechanics;
+  if (declared) {
+    const found = mechanicIds(parsed);
+    if (declared.length !== found.length || found.some((id) => !declared.includes(id))) {
+      errors.push({
+        code: 'mechanic',
+        message: `mechanics [${declared.join(', ')}] do not match the layout [${found.join(', ')}]`,
+      });
+    }
+  }
+  for (let i = 0; i < CELL_COUNT; i++) {
+    if (fx[i] !== FloorFx.TUNNEL) continue;
+    const x = i % GRID_W;
+    const y = (i - x) / GRID_W;
+    const inner = cellIndex(
+      x === 0 ? 1 : x === GRID_W - 1 ? GRID_W - 2 : x,
+      y === 0 ? 1 : y === GRID_H - 1 ? GRID_H - 2 : y,
+    );
+    if (isSolid(cells[inner] as number)) {
+      errors.push({ code: 'mechanic', message: `tunnel at (${x}, ${y}) is walled in` });
+    }
   }
 
   const missing = spawns.findIndex((s) => s < 0);
@@ -273,9 +406,23 @@ export function validateArena(def: ArenaDef): ArenaValidation {
       break;
     }
   }
+  if ((parsed.mech & Mech.GROW) !== 0) {
+    // Once every growing pillar has risen, the rest of the arena must still hang together.
+    const grown = cells.slice();
+    for (let i = 0; i < CELL_COUNT; i++) {
+      if (fx[i] === FloorFx.GROW) grown[i] = LayoutCell.PILLAR;
+    }
+    const after = bfs(grown, spawns[0] as number);
+    for (let i = 0; i < CELL_COUNT; i++) {
+      if (!isSolid(grown[i] as number) && after[i] === -1) {
+        errors.push({ code: 'connectivity', message: 'growing pillars cut the arena in two' });
+        break;
+      }
+    }
+  }
 
   // The majority signature is the reference (ties: the lowest spawn), so the odd one is named.
-  const signatures = spawns.map((s) => spawnSignature(cells, s));
+  const signatures = spawns.map((s) => spawnSignature(cells, fx, s));
   const votes = signatures.map((sig) => signatures.filter((other) => other === sig).length);
   const reference = signatures[votes.indexOf(Math.max(...votes))];
   signatures.forEach((sig, n) => {

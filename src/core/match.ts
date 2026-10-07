@@ -53,6 +53,8 @@ export function startRound(state: SimState): void {
     state.jinxTicks[s] = 0;
     state.invuln[s] = 0;
     state.moveDir[s] = Dir.NONE;
+    state.slideLeft[s] = 0;
+    state.tpLock[s] = 0;
     if (!isSeatActive(state, s)) continue;
     const cell = state.spawnCell[s] as number;
     const x = cell % GRID_W;
@@ -68,6 +70,7 @@ export function startRound(state: SimState): void {
   hdr[Hdr.ROUND_TIME] = hdr[Hdr.ROUND_TICKS] as number;
   hdr[Hdr.SD_INDEX] = 0;
   hdr[Hdr.SD_TIMER] = 0;
+  hdr[Hdr.GROW_TIMER] = 0;
   hdr[Hdr.ROUND_WINNER] = NO_SIDE;
   hdr[Hdr.PHASE] = Phase.COUNTDOWN;
   hdr[Hdr.PHASE_TIMER] = COUNTDOWN_TICKS;

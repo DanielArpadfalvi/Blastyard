@@ -3,7 +3,8 @@
  * inputs and draws it, so the renderer can be looked at and e2e-tested before the real game flow
  * exists. Query parameters:
  *
- *   arena=garden|crossroads|courtyard|bastions   seed=<int>   seats=1–4
+ *   arena=<any of the 12 arena ids, e.g. garden, rink, factory>   seed=<int>   seats=1–4
+ *   look=<puff.hat.pop.trail,…> per seat (ids from the cosmetic catalogue, `-` = none)
  *   script=demo|idle   pause (start paused)   tick=<n> (fast-forward)   speed=0.25–2
  *   scene=chain|suddenDeath (showcase set-up, see `showcase.ts`)
  *   motion=reduced (no shake / flash)   quality=0–2 (effect quality, default 2)
@@ -23,7 +24,8 @@ import {
   stateHash,
   type ArenaDef,
 } from '../core';
-import { CLASSIC_ARENAS } from '../content/arenas/classic';
+import { arenaById } from '../content/arenas';
+import { defaultAppearance, type Appearance } from '../content/cosmetics';
 import { ArenaView, type FxStats, type RenderStats } from '../render/arenaView';
 import type { EffectQuality, FxSettings } from '../render/effects';
 import { solveLayout, type ArenaLayout } from '../render/layout';
@@ -31,7 +33,7 @@ import { readSafeInsets } from '../render/safeArea';
 import { bakeArenaTextures } from '../render/textures';
 import { demoInput } from './demoScript';
 import { MatchRunner, idleInputs, type InputProvider } from './matchRunner';
-import { applyShowcase, parseShowcase, type ShowcaseId } from './showcase';
+import { applyShowcase, parseShowcase, powersInput, type ShowcaseId } from './showcase';
 
 export interface ArenaViewOptions {
   readonly arena: ArenaDef;
@@ -44,6 +46,7 @@ export interface ArenaViewOptions {
   readonly testHook: boolean;
   readonly scene: ShowcaseId | null;
   readonly fx: FxSettings;
+  readonly looks: readonly Appearance[];
 }
 
 /** What the state itself says should be visible (compared against `RenderStats` in e2e). */
@@ -73,6 +76,15 @@ export interface ArenaTestHook {
   stateCounts(): StateCounts;
   /** Effects on screen right now. */
   fx(): FxStats;
+  /** Floor-mechanic decals on screen and the arena's `Mech` bits. */
+  mechanics(): { readonly decals: number; readonly mech: number };
+  /** Power-up visuals on screen (shield bubbles, curses, sliding pops, pops in flight). */
+  powerStats(): {
+    readonly shields: number;
+    readonly curses: number;
+    readonly sliding: number;
+    readonly flying: number;
+  };
 }
 
 declare global {
@@ -93,10 +105,28 @@ function intParam(q: URLSearchParams, name: string, fallback: number, min: numbe
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
 }
 
+/** `look=cat.crown.gold.rainbow,-.-.-.-` → one appearance per seat (default look for the rest). */
+export function parseLooks(raw: string | null): Appearance[] {
+  const out: Appearance[] = [];
+  const parts = raw ? raw.split(',') : [];
+  for (let s = 0; s < MAX_SEATS; s++) {
+    const base = defaultAppearance(s);
+    const f = parts[s]?.split('.') ?? [];
+    const pick = (i: number): string | undefined => (f[i] && f[i] !== '-' ? f[i] : undefined);
+    out.push({
+      puff: pick(0) ?? base.puff,
+      hat: pick(1) ?? null,
+      pop: pick(2) ?? base.pop,
+      trail: pick(3) ?? null,
+    });
+  }
+  return out;
+}
+
 export function parseArenaViewOptions(search: string): ArenaViewOptions {
   const q = new URLSearchParams(search);
   const arenaId = q.get('arena') ?? 'garden';
-  const arena = CLASSIC_ARENAS.find((a) => a.id === arenaId) ?? (CLASSIC_ARENAS[0] as ArenaDef);
+  const arena = arenaById(arenaId) ?? (arenaById('garden') as ArenaDef);
   const speed = Number.parseFloat(q.get('speed') ?? '1');
   return {
     arena,
@@ -112,6 +142,7 @@ export function parseArenaViewOptions(search: string): ArenaViewOptions {
       reducedMotion: q.get('motion') === 'reduced',
       quality: intParam(q, 'quality', 2, 0, 2) as EffectQuality,
     },
+    looks: parseLooks(q.get('look')),
   };
 }
 
@@ -155,13 +186,18 @@ export function startArenaView(app: Application, search: string): MatchRunner {
   if (opts.scene) applyShowcase(state, opts.scene);
   const textures = bakeArenaTextures(app.renderer);
   const view = new ArenaView(textures, opts.fx);
+  view.bindArena(state, opts.arena.theme);
+  opts.looks.forEach((look, seat) => view.setAppearance(seat, look));
   app.stage.addChild(view.root);
+  const firstTick = (state.hdr[Hdr.TICK] as number) + 1;
   const provider: InputProvider =
-    opts.script === 'demo' && opts.scene === null
-      ? (st, out) => {
-          for (let s = 0; s < MAX_SEATS; s++) out[s] = demoInput(st, s);
-        }
-      : idleInputs;
+    opts.scene === 'powers'
+      ? (_st, out) => powersInput(state, firstTick, out)
+      : opts.script === 'demo' && opts.scene === null
+        ? (st, out) => {
+            for (let s = 0; s < MAX_SEATS; s++) out[s] = demoInput(st, s);
+          }
+        : idleInputs;
   const runner = new MatchRunner(state, provider, view, opts.speed);
   runner.onEvents((events) => view.pushEvents(events, state));
 
@@ -200,6 +236,8 @@ export function startArenaView(app: Application, search: string): MatchRunner {
       renderStats: () => view.getStats(),
       stateCounts: () => countStateVisibles(runner),
       fx: () => view.getFxStats(),
+      powerStats: () => view.getPowerStats(),
+      mechanics: () => ({ decals: view.getDecalCount(), mech: state.hdr[Hdr.MECH] as number }),
     };
   }
   return runner;

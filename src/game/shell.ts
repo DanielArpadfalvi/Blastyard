@@ -20,7 +20,7 @@
 
 import type { Application } from 'pixi.js';
 import { GameAudio, type AudioStats } from '../audio';
-import { CLASSIC_ARENAS } from '../content/arenas/classic';
+import { FREE_ARENAS, arenaById } from '../content/arenas';
 import { Hdr, Phase, hashHex, stateHash, type ArenaDef } from '../core';
 import type { ZoneSpec } from '../input/zones';
 import { systemClock, type Clock } from '../platform/clock';
@@ -153,7 +153,7 @@ export function parseShellOptions(search: string): ShellOptions {
     test,
     manualClock: test && q.get('clock') === 'manual',
     seed: intParam(q, 'seed', -0x80000000, 0x7fffffff),
-    arena: CLASSIC_ARENAS.find((a) => a.id === arenaId) ?? null,
+    arena: arenaById(arenaId) ?? null,
     winsToMatch: intParam(q, 'wins', 1, 5) ?? 3,
     bots: intParam(q, 'bots', 0, MAX_CORNER_BOTS) ?? 0,
     speed: GAME_SPEEDS.find((v) => String(v) === q.get('speed')) ?? null,
@@ -301,7 +301,7 @@ export class GameShell {
     this.bots = bots;
     const n = this.matches++;
     const seed = this.options.seed ?? (this.clock.now() ^ Math.imul(n + 1, 0x9e3779b9)) | 0;
-    const arena = this.options.arena ?? (CLASSIC_ARENAS[n % CLASSIC_ARENAS.length] as ArenaDef);
+    const arena = this.options.arena ?? (FREE_ARENAS[n % FREE_ARENAS.length] as ArenaDef);
     this.replaceSession(
       new GameSession(
         this.app,
@@ -338,7 +338,7 @@ export class GameShell {
   startBotMatch(): void {
     const n = this.matches++;
     const seed = this.options.seed ?? (this.clock.now() ^ Math.imul(n + 1, 0x9e3779b9)) | 0;
-    const arena = this.options.arena ?? (CLASSIC_ARENAS[n % CLASSIC_ARENAS.length] as ArenaDef);
+    const arena = this.options.arena ?? (FREE_ARENAS[n % FREE_ARENAS.length] as ArenaDef);
     this.replaceSession(
       new GameSession(
         this.app,
@@ -386,7 +386,7 @@ export class GameShell {
 
   private startAttract(): void {
     const seed = this.attractSeed++;
-    const arena = this.options.arena ?? (CLASSIC_ARENAS[0] as ArenaDef);
+    const arena = this.options.arena ?? (FREE_ARENAS[0] as ArenaDef);
     this.replaceSession(
       new GameSession(
         this.app,

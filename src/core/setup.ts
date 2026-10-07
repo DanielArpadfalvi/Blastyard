@@ -102,6 +102,9 @@ export function createState(setup: MatchSetup): SimState {
   }
   state.weights.set(weights);
   state.layout.set(parsed.cells);
+  state.floor.set(parsed.fx);
+  state.partner.set(parsed.partner);
+  hdr[Hdr.MECH] = parsed.mech;
 
   let flags = 0;
   if (rules.suddenDeath === 'spiral') flags |= RuleFlag.SUDDEN_DEATH;

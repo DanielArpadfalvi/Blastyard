@@ -20,14 +20,17 @@
  */
 
 import { EventKind, type EventSink } from './events';
+import { BELT_SPEED, TRAMPOLINE_HOP, beltDir } from './floorFx';
 import { DIR_DX, DIR_DY, type Direction } from './input';
 import {
   Ability,
   BombFlag,
   CELL_COUNT,
+  FloorFx,
   Hdr,
   MAX_BOMBS,
   MAX_SEATS,
+  Mech,
   NO_OWNER,
   Tile,
   cellIndex,
@@ -212,6 +215,9 @@ export function updateBombInput(
     if (addBomb(state, x, y, seat, FUSE_TICKS, state.range[seat] as number, flags) >= 0) {
       state.bombBuffer[seat] = 0;
       sink.emit(EventKind.BOMB_PLACED, seat, cellIndex(x, y));
+      if (state.floor[cellIndex(x, y)] === FloorFx.TRAMPOLINE) {
+        hopBomb(state, bombCount(state) - 1, state.facing[seat] as Direction, seat, sink);
+      }
       return;
     }
   }
@@ -245,7 +251,27 @@ function tossOwnBomb(state: SimState, seat: number, sink: EventSink): boolean {
   const dx = DIR_DX[dir] as number;
   const dy = DIR_DY[dir] as number;
   if (dx === 0 && dy === 0) return false;
-  for (let d = TOSS_DISTANCE; d >= 1; d--) {
+  return flyBomb(state, b, dir, TOSS_DISTANCE, seat, sink);
+}
+
+/**
+ * Flies bomb `b` up to `distance` tiles in `dir` over walls, crates and bombs; it lands on the
+ * first free floor tile from that distance down to 1 (and stays put when none is free).
+ */
+function flyBomb(
+  state: SimState,
+  b: number,
+  dir: Direction,
+  distance: number,
+  seat: number,
+  sink: EventSink,
+): boolean {
+  const x = toTile(state.bombX[b] as number);
+  const y = toTile(state.bombY[b] as number);
+  const dx = DIR_DX[dir] as number;
+  const dy = DIR_DY[dir] as number;
+  if (dx === 0 && dy === 0) return false;
+  for (let d = distance; d >= 1; d--) {
     const lx = x + dx * d;
     const ly = y + dy * d;
     if (!bombCanEnter(state, lx, ly)) continue;
@@ -253,10 +279,16 @@ function tossOwnBomb(state: SimState, seat: number, sink: EventSink): boolean {
     state.bombY[b] = tileCenter(ly);
     state.bombPass[b] = 0;
     state.bombSlide[b] = 0;
+    state.bombFlags[b] = (state.bombFlags[b] as number) & ~BombFlag.BELT;
     sink.emit(EventKind.BOMB_TOSSED, seat, cellIndex(lx, ly), cellIndex(x, y));
     return true;
   }
   return false;
+}
+
+/** Trampoline: bomb `b` hops `TRAMPOLINE_HOP` tiles in `dir` (lands closer when blocked). */
+function hopBomb(state: SimState, b: number, dir: Direction, seat: number, sink: EventSink): void {
+  flyBomb(state, b, dir, TRAMPOLINE_HOP, seat, sink);
 }
 
 /**
@@ -274,33 +306,60 @@ export function kickBomb(
   const y = toTile(state.bombY[b] as number);
   if (!bombCanEnter(state, x + (DIR_DX[dir] as number), y + (DIR_DY[dir] as number))) return false;
   state.bombSlide[b] = dir;
+  state.bombFlags[b] = (state.bombFlags[b] as number) & ~BombFlag.BELT;
   state.bombPass[b] = 0;
   sink?.emit(EventKind.BOMB_KICKED, seat, cellIndex(x, y), dir);
   return true;
 }
 
 /**
- * Moves every sliding (kicked) bomb by `KICK_SPEED`. A bomb only continues into the next tile from
- * a tile centre: it stops dead at the centre when that tile is not free, and never overshoots a
- * centre within a tick.
+ * Moves every sliding bomb: kicked ones by `KICK_SPEED`, belt-carried ones by `BELT_SPEED`. A bomb
+ * only continues into the next tile from a tile centre: it stops dead at the centre when that
+ * tile is not free, and never overshoots a centre within a tick. A resting bomb whose owner has
+ * left it is picked up by a conveyor belt at its centre; a belt bomb follows the belts' turns and
+ * stops where the belts end. A sliding bomb that reaches a trampoline centre hops over it.
  */
-export function slideBombs(state: SimState): void {
+export function slideBombs(state: SimState, sink?: EventSink): void {
   const n = bombCount(state);
+  const belts = ((state.hdr[Hdr.MECH] as number) & Mech.BELT) !== 0;
   for (let b = 0; b < n; b++) {
-    const dir = state.bombSlide[b] as Direction;
+    let dir = state.bombSlide[b] as Direction;
+    let belt = ((state.bombFlags[b] as number) & BombFlag.BELT) !== 0;
+    const bx = state.bombX[b] as number;
+    const by = state.bombY[b] as number;
+    const tx = toTile(bx);
+    const ty = toTile(by);
+    const atCentre = bx === tileCenter(tx) && by === tileCenter(ty);
+    if (belts && atCentre && (dir === 0 || belt)) {
+      // Belt pick-up / continuation at a tile centre.
+      const bd = beltDir(state.floor[cellIndex(tx, ty)] as number);
+      const free =
+        bd !== 0 &&
+        (dir !== 0 || state.bombPass[b] === 0) &&
+        bombCanEnter(state, tx + (DIR_DX[bd] as number), ty + (DIR_DY[bd] as number));
+      if (free) {
+        dir = bd;
+        belt = true;
+        state.bombSlide[b] = dir;
+        state.bombFlags[b] = (state.bombFlags[b] as number) | BombFlag.BELT;
+      } else if (belt) {
+        state.bombSlide[b] = 0;
+        state.bombFlags[b] = (state.bombFlags[b] as number) & ~BombFlag.BELT;
+        continue;
+      }
+    }
     if (dir === 0) continue;
     const dx = DIR_DX[dir] as number;
     const dy = DIR_DY[dir] as number;
     const horiz = dx !== 0;
-    const pos = horiz ? (state.bombX[b] as number) : (state.bombY[b] as number);
+    const pos = horiz ? bx : by;
     const sign = dx + dy;
     const centre = tileCenter(toTile(pos));
-    let next = pos + sign * KICK_SPEED;
+    let next = pos + sign * (belt ? BELT_SPEED : KICK_SPEED);
     if (pos === centre) {
-      const tx = toTile(state.bombX[b] as number);
-      const ty = toTile(state.bombY[b] as number);
       if (!bombCanEnter(state, tx + dx, ty + dy)) {
         state.bombSlide[b] = 0;
+        state.bombFlags[b] = (state.bombFlags[b] as number) & ~BombFlag.BELT;
         continue;
       }
     } else if (sign > 0 ? pos < centre && next >= centre : pos > centre && next <= centre) {
@@ -308,6 +367,15 @@ export function slideBombs(state: SimState): void {
     }
     if (horiz) state.bombX[b] = next;
     else state.bombY[b] = next;
+    if (
+      sink &&
+      next === centre &&
+      pos !== centre &&
+      state.floor[cellIndex(toTile(state.bombX[b] as number), toTile(state.bombY[b] as number))] ===
+        FloorFx.TRAMPOLINE
+    ) {
+      hopBomb(state, b, dir, state.bombOwner[b] as number, sink);
+    }
   }
 }
 

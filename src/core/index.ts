@@ -18,6 +18,8 @@ export {
 export {
   Ability,
   BombFlag,
+  FloorFx,
+  Mech,
   CELL_COUNT,
   GRID_H,
   GRID_W,
@@ -50,6 +52,7 @@ export {
   stateHash,
   tileCenter,
   toTile,
+  type FloorFxKind,
   type PickupKind,
   type SimState,
   type TileType,
@@ -74,6 +77,7 @@ export {
   DEFAULT_POWERUP_CHANCE,
   DEFAULT_POWERUP_WEIGHTS,
   LayoutCell,
+  MECHANIC_IDS,
   fillArena,
   loadArena,
   parseArena,
@@ -84,6 +88,7 @@ export {
   type ArenaErrorCode,
   type ArenaValidation,
   type LayoutCellType,
+  type MechanicId,
   type ParsedArena,
 } from './arena';
 export {
@@ -107,6 +112,16 @@ export {
 } from './bombs';
 export { EventKind, type EventKindId, type SimEvent } from './events';
 export {
+  BELT_SPEED,
+  GROW_AT_PERCENT,
+  GROW_INTERVAL,
+  ICE_SLIDE,
+  TELEPORT_WINDOW,
+  TRAMPOLINE_HOP,
+  beltDir,
+} from './floorFx';
+export { applyFloors, nextGrowCell, updateGrow } from './floor';
+export {
   HASTE_INTERVAL,
   JINX_TICKS,
   JINX_TOUCH,
@@ -124,6 +139,7 @@ export {
   CORNER_ASSIST,
   MAX_SPEED_LEVEL,
   ROLLER_SPEED,
+  conveyPlayer,
   isPassable,
   movePlayer,
   playerSpeed,

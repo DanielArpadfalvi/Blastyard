@@ -2,6 +2,7 @@ import { h, render } from 'preact';
 import './ui/styles.css';
 import { startArenaView, wantsArenaView } from './game/arenaDevView';
 import { GameShell, parseShellOptions } from './game/shell';
+import { startSheetView, wantsSheetView } from './game/sheetView';
 import { getLanguage, onLanguageChange, setLanguage } from './i18n';
 import { createStage } from './render/stage';
 import { App } from './ui/App';
@@ -25,6 +26,11 @@ async function boot(): Promise<void> {
     return;
   }
   const app = await createStage(stage);
+  // T4.4 item sheets (`?view=sheet&page=…`).
+  if (wantsSheetView(location.search)) {
+    startSheetView(app, location.search);
+    return;
+  }
   // T2.1 renderer dev/test view (`?view=arena`, or `?test` without `game`): scripted inputs.
   if (wantsArenaView(location.search)) {
     startArenaView(app, location.search);

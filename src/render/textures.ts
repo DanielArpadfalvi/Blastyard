@@ -5,30 +5,89 @@
  * the renderer resolution; sprites scale them to the laid-out tile size.
  */
 
-import { Container, Graphics, Rectangle, Text, type Renderer, type Texture } from 'pixi.js';
+import { Graphics, Rectangle, type Container, type Renderer, type Texture } from 'pixi.js';
 import { PICKUP_KIND_COUNT } from '../core';
+import {
+  HATS,
+  POP_SKINS,
+  PUFFS,
+  START,
+  type HatDef,
+  type PopSkinDef,
+  type PuffDef,
+} from '../content/cosmetics';
 import * as P from './palette';
 import { FX_KINDS, Fx } from './effects';
+import {
+  BADGE_TEX,
+  PUFF_TEX,
+  drawBadge,
+  drawHatArt,
+  drawPopSkin,
+  drawPuffArt,
+  starPoints,
+} from './puffArt';
 import { EYE_BLINK, EYE_SCARED, EYE_VARIANTS } from './scene';
+import { themeFor, type Theme } from './themes';
+
+export { BADGE_TEX, PUFF_TEX };
 
 /** Logical size of one cell in texture space. */
 export const TEX = 96;
-/** Puff textures are larger than a cell (ears, antennae stick out). */
-export const PUFF_TEX = 128;
 /** Fuse ring frames (0 = burnt down … FUSE_FRAMES = full). */
 export const FUSE_FRAMES = 24;
 export const EYE_TEX_W = 64;
 export const EYE_TEX_H = 40;
-export const BADGE_TEX = 44;
 /** Logical size of a particle texture (particles are scaled relative to the tile). */
 export const FX_TEX = 32;
 
-export interface ArenaTextures {
+/** The tiles of one arena theme. */
+export interface ThemeTextures {
+  readonly theme: Theme;
   readonly floor: readonly [Texture, Texture];
   readonly pillar: Texture;
   readonly crate: Texture;
   /** Sudden-death block (interior WALL tile). */
   readonly block: Texture;
+}
+
+/** Floor-mechanic decals (drawn over the floor tile of a mechanic cell). */
+export interface DecalTextures {
+  readonly ice: Texture;
+  /** Conveyor belt pointing right, 3 animation frames (rotate for other directions). */
+  readonly belt: readonly Texture[];
+  readonly teleport: Texture;
+  /** Tunnel mouth opening to the right (rotate for other sides). */
+  readonly tunnel: Texture;
+  readonly trampoline: Texture;
+  /** Cracked ground where a pillar is about to grow. */
+  readonly grow: Texture;
+}
+
+/** Power-up visuals: shield bubble, Jinx aura + glyph per effect (index = `Jinx` id), speed streak. */
+export interface PowerTextures {
+  readonly shield: Texture;
+  readonly jinxAura: Texture;
+  readonly jinxGlyph: readonly Texture[];
+  readonly streak: Texture;
+}
+
+export interface ArenaTextures {
+  /** Garden theme (default); see `theme(id)` for the others. */
+  readonly floor: readonly [Texture, Texture];
+  readonly pillar: Texture;
+  readonly crate: Texture;
+  readonly block: Texture;
+  /** Tiles of a theme, baked on first use. */
+  theme(id: string): ThemeTextures;
+  readonly decals: DecalTextures;
+  readonly power: PowerTextures;
+  /** Puff body of catalogue entry `puff` in seat colour `seat`, baked on first use. */
+  puffOf(puff: number, seat: number): Texture;
+  /** Hat texture on the Puff canvas (index into `HATS`), baked on first use. */
+  hatOf(hat: number): Texture;
+  /** Pop skin (index into `POP_SKINS`), baked on first use. */
+  popOf(skin: number): Texture;
   readonly shadow: Texture;
   /** Per seat. */
   readonly puff: readonly Texture[];
@@ -73,7 +132,7 @@ function outline(width = 4): { width: number; color: number; join: 'round' } {
 // ---------------------------------------------------------------------------------------------
 // Tiles
 
-function drawFloor(base: number): Graphics {
+function drawFloor(base: number, blade: number): Graphics {
   const g = new Graphics();
   g.rect(0, 0, TEX, TEX).fill(base);
   // A few fixed grass tufts (deterministic pattern, no randomness).
@@ -91,34 +150,37 @@ function drawFloor(base: number): Graphics {
       .lineTo(x + 1, y - 4)
       .moveTo(x + 4, y + 5)
       .lineTo(x + 5, y - 1)
-      .stroke({ width: 2, color: P.LAWN_BLADE, cap: 'round' });
+      .stroke({ width: 2, color: blade, cap: 'round' });
   }
   return g;
 }
 
-function drawPillar(): Graphics {
+function drawPillar(t: Theme): Graphics {
   const g = new Graphics();
   g.roundRect(8, 12, 84, 82, 14).fill({ color: P.SHADOW, alpha: 0.25 });
-  g.roundRect(5, 5, 86, 86, 14).fill(P.STONE_DARK).stroke(outline());
-  g.roundRect(11, 9, 74, 66, 11).fill(P.STONE_TOP);
-  g.moveTo(26, 24).lineTo(36, 34).lineTo(34, 46).stroke({ width: 3, color: P.STONE, cap: 'round' });
-  g.moveTo(62, 52).lineTo(70, 44).stroke({ width: 3, color: P.STONE, cap: 'round' });
+  g.roundRect(5, 5, 86, 86, 14).fill(t.pillarBody).stroke(outline());
+  g.roundRect(11, 9, 74, 66, 11).fill(t.pillarTop);
+  g.moveTo(26, 24)
+    .lineTo(36, 34)
+    .lineTo(34, 46)
+    .stroke({ width: 3, color: t.pillarCrack, cap: 'round' });
+  g.moveTo(62, 52).lineTo(70, 44).stroke({ width: 3, color: t.pillarCrack, cap: 'round' });
   g.roundRect(18, 14, 26, 8, 4).fill({ color: 0xffffff, alpha: 0.35 });
   return g;
 }
 
-function drawCrate(): Graphics {
+function drawCrate(t: Theme): Graphics {
   const g = new Graphics();
   g.roundRect(10, 14, 82, 80, 8).fill({ color: P.SHADOW, alpha: 0.25 });
-  g.roundRect(7, 7, 82, 82, 8).fill(P.WOOD).stroke(outline());
+  g.roundRect(7, 7, 82, 82, 8).fill(t.crateWood).stroke(outline());
   // Planks.
   for (const y of [30, 48, 66]) {
-    g.moveTo(12, y).lineTo(84, y).stroke({ width: 2, color: P.WOOD_DARK, alpha: 0.6 });
+    g.moveTo(12, y).lineTo(84, y).stroke({ width: 2, color: t.crateDark, alpha: 0.6 });
   }
   // Frame and cross brace.
-  g.roundRect(15, 15, 66, 66, 4).stroke({ width: 5, color: P.WOOD_DARK });
-  g.moveTo(19, 19).lineTo(77, 77).stroke({ width: 7, color: P.WOOD_DARK, cap: 'round' });
-  g.moveTo(19, 19).lineTo(77, 77).stroke({ width: 3, color: P.WOOD_LIGHT, cap: 'round' });
+  g.roundRect(15, 15, 66, 66, 4).stroke({ width: 5, color: t.crateDark });
+  g.moveTo(19, 19).lineTo(77, 77).stroke({ width: 7, color: t.crateDark, cap: 'round' });
+  g.moveTo(19, 19).lineTo(77, 77).stroke({ width: 3, color: t.crateLight, cap: 'round' });
   for (const [x, y] of [
     [15, 15],
     [81, 15],
@@ -130,15 +192,15 @@ function drawCrate(): Graphics {
   return g;
 }
 
-function drawBlock(): Graphics {
+function drawBlock(t: Theme): Graphics {
   const g = new Graphics();
-  g.rect(0, 0, TEX, TEX).fill(P.BRICK_DARK);
+  g.rect(0, 0, TEX, TEX).fill(t.brickDark);
   const rows = 4;
   const h = TEX / rows;
   for (let r = 0; r < rows; r++) {
     const offset = r % 2 === 0 ? 0 : TEX / 4;
     for (let x = -TEX / 4 + offset; x < TEX; x += TEX / 2) {
-      g.roundRect(x + 2, r * h + 2, TEX / 2 - 4, h - 4, 3).fill(P.BRICK);
+      g.roundRect(x + 2, r * h + 2, TEX / 2 - 4, h - 4, 3).fill(t.brick);
     }
   }
   g.rect(1.5, 1.5, TEX - 3, TEX - 3).stroke(outline(3));
@@ -151,66 +213,6 @@ function drawBlock(): Graphics {
 function drawShadow(): Graphics {
   const g = new Graphics();
   g.ellipse(C, C + 26, 32, 12).fill({ color: P.SHADOW, alpha: 0.28 });
-  return g;
-}
-
-function drawPuff(seat: number): Graphics {
-  const g = new Graphics();
-  const c = PUFF_TEX / 2;
-  const color = P.SEAT_COLORS[seat] as number;
-  const shade = P.SEAT_SHADES[seat] as number;
-  const r = 36;
-  // Silhouette feature behind the body: ears, antenna, spikes, beak (one per seat).
-  switch (seat) {
-    case 0:
-      for (const sx of [-1, 1]) {
-        g.circle(c + sx * 25, c - 27, 13)
-          .fill(color)
-          .stroke(outline());
-        g.circle(c + sx * 25, c - 27, 6).fill(shade);
-      }
-      break;
-    case 1:
-      g.moveTo(c + 4, c - r + 4)
-        .quadraticCurveTo(c + 8, c - r - 10, c + 16, c - r - 18)
-        .stroke({ width: 4, color: P.OUTLINE, cap: 'round' });
-      g.circle(c + 16, c - r - 18, 8)
-        .fill(shade)
-        .stroke(outline(3.5));
-      break;
-    case 2:
-      for (const [dx, h] of [
-        [-20, 14],
-        [0, 18],
-        [20, 14],
-      ] as const) {
-        g.poly([c + dx - 10, c - r + 10, c + dx, c - r - h + 4, c + dx + 10, c - r + 10])
-          .fill(shade)
-          .stroke(outline(3.5));
-      }
-      break;
-    default:
-      // Little tail tuft at the back.
-      g.ellipse(c, c + r - 2, 12, 9)
-        .fill(shade)
-        .stroke(outline(3.5));
-      break;
-  }
-  g.circle(c, c, r).fill(color).stroke(outline(5));
-  g.ellipse(c - 11, c - 15, 15, 10).fill({ color: 0xffffff, alpha: 0.32 });
-  // Cheeks.
-  g.ellipse(c - 21, c + 12, 7, 4).fill({ color: 0xff8fa3, alpha: 0.6 });
-  g.ellipse(c + 21, c + 12, 7, 4).fill({ color: 0xff8fa3, alpha: 0.6 });
-  if (seat === 3) {
-    // Beak.
-    g.poly([c - 9, c + 10, c + 9, c + 10, c, c + 22])
-      .fill(0xff9f1c)
-      .stroke(outline(3));
-  } else {
-    g.moveTo(c - 6, c + 14)
-      .quadraticCurveTo(c, c + 19, c + 6, c + 14)
-      .stroke({ width: 3, color: P.OUTLINE, cap: 'round' });
-  }
   return g;
 }
 
@@ -243,84 +245,8 @@ function drawEyes(variant: number): Graphics {
   return g;
 }
 
-function starPoints(cx: number, cy: number, outer: number, inner: number): number[] {
-  const pts: number[] = [];
-  for (let i = 0; i < 10; i++) {
-    const a = -Math.PI / 2 + (i * Math.PI) / 5;
-    const r = i % 2 === 0 ? outer : inner;
-    pts.push(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
-  }
-  return pts;
-}
-
-/** Seat badge: shape (circle, triangle, square, star) + seat number. */
-function drawBadge(seat: number): Container {
-  const root = new Container();
-  const g = new Graphics();
-  const c = BADGE_TEX / 2;
-  const fill = { color: 0xffffff };
-  switch (seat) {
-    case 0:
-      g.circle(c, c, 15).fill(fill).stroke(outline(3));
-      break;
-    case 1:
-      g.poly([c, c - 18, c + 18, c + 14, c - 18, c + 14])
-        .fill(fill)
-        .stroke(outline(3));
-      break;
-    case 2:
-      g.roundRect(c - 14, c - 14, 28, 28, 4)
-        .fill(fill)
-        .stroke(outline(3));
-      break;
-    default:
-      g.poly(starPoints(c, c + 1, 20, 10))
-        .fill(fill)
-        .stroke(outline(3));
-      break;
-  }
-  root.addChild(g);
-  const label = new Text({
-    text: String(seat + 1),
-    style: {
-      fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
-      fontSize: 17,
-      fontWeight: '900',
-      fill: P.OUTLINE,
-    },
-  });
-  label.anchor.set(0.5);
-  label.position.set(c, seat === 1 ? c + 4 : c + 1);
-  root.addChild(label);
-  return root;
-}
-
 // ---------------------------------------------------------------------------------------------
 // Pops (bombs)
-
-function drawPop(body: number, dark: number): Graphics {
-  const g = new Graphics();
-  g.ellipse(C, C + 28, 30, 10).fill({ color: P.SHADOW, alpha: 0.28 });
-  g.circle(C, C + 2, 31)
-    .fill(body)
-    .stroke(outline(4.5));
-  // Pod segments.
-  g.moveTo(C - 14, C - 24)
-    .quadraticCurveTo(C - 25, C + 2, C - 14, C + 28)
-    .stroke({ width: 3, color: dark, cap: 'round' });
-  g.moveTo(C + 14, C - 24)
-    .quadraticCurveTo(C + 25, C + 2, C + 14, C + 28)
-    .stroke({ width: 3, color: dark, cap: 'round' });
-  g.ellipse(C - 9, C - 10, 8, 6).fill({ color: 0xffffff, alpha: 0.45 });
-  // Leafy cap.
-  g.ellipse(C - 7, C - 29, 9, 5)
-    .fill(0x6cc551)
-    .stroke(outline(3));
-  g.ellipse(C + 7, C - 29, 9, 5)
-    .fill(0x6cc551)
-    .stroke(outline(3));
-  return g;
-}
 
 function drawFuseRing(frame: number): Graphics {
   const g = new Graphics();
@@ -575,6 +501,210 @@ function drawDropTarget(): Graphics {
   return g;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Floor-mechanic decals (T4.3)
+
+function drawIceDecal(): Graphics {
+  const g = new Graphics();
+  g.roundRect(3, 3, TEX - 6, TEX - 6, 10).fill({ color: 0xbfe6ff, alpha: 0.4 });
+  g.roundRect(3, 3, TEX - 6, TEX - 6, 10).stroke({ width: 2.5, color: 0xffffff, alpha: 0.6 });
+  g.moveTo(16, 72)
+    .lineTo(40, 48)
+    .moveTo(48, 42)
+    .lineTo(74, 18)
+    .moveTo(56, 76)
+    .lineTo(70, 62)
+    .stroke({ width: 4, color: 0xffffff, alpha: 0.85, cap: 'round' });
+  g.poly(starPoints(70, 70, 8, 3)).fill({ color: 0xffffff, alpha: 0.9 });
+  return g;
+}
+
+function drawBeltDecal(frame: number): Graphics {
+  const g = new Graphics();
+  g.roundRect(4, 10, TEX - 8, TEX - 20, 10)
+    .fill({ color: 0x3d4350, alpha: 0.85 })
+    .stroke(outline(3));
+  g.moveTo(10, 18)
+    .lineTo(TEX - 10, 18)
+    .moveTo(10, TEX - 18)
+    .lineTo(TEX - 10, TEX - 18)
+    .stroke({ width: 3, color: 0x8d97a3 });
+  const pitch = 28;
+  for (let k = -1; k < 4; k++) {
+    const x = 8 + k * pitch + (frame * pitch) / 3;
+    if (x < 8 || x > TEX - 28) continue;
+    g.moveTo(x, 30)
+      .lineTo(x + 14, TEX / 2)
+      .lineTo(x, TEX - 30)
+      .stroke({ width: 8, color: 0xffc83d, cap: 'round', join: 'round' });
+  }
+  return g;
+}
+
+function drawTeleportDecal(): Graphics {
+  const g = new Graphics();
+  g.circle(C, C, 38).fill({ color: 0x5b2a86, alpha: 0.92 }).stroke(outline(4));
+  g.circle(C, C, 30).stroke({ width: 3, color: 0xb57bff });
+  g.moveTo(C, C);
+  for (let i = 1; i <= 36; i++) {
+    const a = i * 0.45;
+    const r = i * 0.8;
+    g.lineTo(C + Math.cos(a) * r, C + Math.sin(a) * r);
+  }
+  g.stroke({ width: 4, color: 0xf2e6ff, cap: 'round', join: 'round' });
+  return g;
+}
+
+function drawTunnelDecal(): Graphics {
+  const g = new Graphics();
+  g.roundRect(-4, 6, TEX - 2, TEX - 12, 14)
+    .fill(0x1c1511)
+    .stroke({ width: 5, color: 0x8a7258, join: 'round' });
+  g.roundRect(10, 18, TEX - 30, TEX - 36, 10).fill(0x0b0806);
+  for (const y of [34, 62]) {
+    g.poly([34, y - 8, 52, y, 34, y + 8]).fill({ color: 0xffc83d, alpha: 0.9 });
+  }
+  return g;
+}
+
+function drawTrampolineDecal(): Graphics {
+  const g = new Graphics();
+  g.circle(C, C + 2, 37)
+    .fill(0xe63946)
+    .stroke(outline(4));
+  g.circle(C, C + 2, 28)
+    .fill(0xfff1d0)
+    .stroke({ width: 3, color: P.OUTLINE });
+  g.moveTo(C - 24, C + 2)
+    .lineTo(C + 24, C + 2)
+    .moveTo(C, C - 22)
+    .lineTo(C, C + 26)
+    .moveTo(C - 17, C - 15)
+    .lineTo(C + 17, C + 19)
+    .moveTo(C + 17, C - 15)
+    .lineTo(C - 17, C + 19)
+    .stroke({ width: 2, color: 0xe63946, alpha: 0.6 });
+  g.circle(C, C + 2, 6).fill(0xe63946);
+  return g;
+}
+
+function drawGrowDecal(): Graphics {
+  const g = new Graphics();
+  g.roundRect(5, 5, TEX - 10, TEX - 10, 12).fill({ color: 0x5b4b3d, alpha: 0.28 });
+  g.moveTo(14, 22)
+    .lineTo(34, 38)
+    .lineTo(30, 54)
+    .lineTo(52, 66)
+    .moveTo(34, 38)
+    .lineTo(58, 30)
+    .lineTo(76, 18)
+    .moveTo(52, 66)
+    .lineTo(70, 76)
+    .lineTo(84, 70)
+    .stroke({ width: 4, color: 0x4a3b2f, alpha: 0.9, cap: 'round', join: 'round' });
+  for (const [x, y, r] of [
+    [22, 70, 5],
+    [76, 44, 4],
+    [48, 18, 4],
+    [66, 84, 3],
+  ] as const) {
+    g.circle(x, y, r).fill(0x8c7f70).stroke({ width: 2, color: P.OUTLINE, alpha: 0.7 });
+  }
+  return g;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Power-up visuals (T4.1 follow-up): shield bubble, Jinx aura and glyphs, speed streak
+
+function drawShieldBubble(): Graphics {
+  const g = new Graphics();
+  g.circle(C, C, 43).fill({ color: 0x8fd0ff, alpha: 0.22 });
+  g.circle(C, C, 43).stroke({ width: 3.5, color: 0xffffff, alpha: 0.85 });
+  g.circle(C, C, 43).stroke({ width: 1.5, color: 0x2f74c4, alpha: 0.8 });
+  g.arc(C, C, 34, Math.PI * 1.1, Math.PI * 1.5).stroke({
+    width: 4,
+    color: 0xffffff,
+    alpha: 0.8,
+    cap: 'round',
+  });
+  return g;
+}
+
+function drawJinxAura(): Graphics {
+  const g = new Graphics();
+  g.circle(C, C, 43).fill({ color: 0x7a3fb0, alpha: 0.2 });
+  for (let i = 0; i < 8; i++) {
+    const a = (i * Math.PI) / 4;
+    g.arc(C, C, 43, a, a + 0.5).stroke({ width: 4.5, color: 0xb57bff, alpha: 0.95, cap: 'round' });
+  }
+  return g;
+}
+
+/** Jinx effect glyph on a purple disc: 1 reversed, 2 slow, 3 haste, 4 no bombs. */
+function drawJinxGlyph(effect: number): Graphics {
+  const g = new Graphics();
+  g.circle(C, C, 40).fill(P.JINX_BG).stroke(outline(4));
+  const ink = { width: 5, color: 0xf2e6ff, cap: 'round' as const, join: 'round' as const };
+  switch (effect) {
+    case 1:
+      g.moveTo(C - 20, C - 9)
+        .lineTo(C + 18, C - 9)
+        .moveTo(C + 8, C - 19)
+        .lineTo(C + 18, C - 9)
+        .lineTo(C + 8, C + 1)
+        .moveTo(C + 20, C + 11)
+        .lineTo(C - 18, C + 11)
+        .moveTo(C - 8, C + 1)
+        .lineTo(C - 18, C + 11)
+        .lineTo(C - 8, C + 21)
+        .stroke(ink);
+      break;
+    case 2:
+      g.poly([C - 16, C - 22, C + 16, C - 22, C, C]).fill(0xf2e6ff);
+      g.poly([C - 16, C + 22, C + 16, C + 22, C, C]).fill(0xf2e6ff);
+      g.moveTo(C - 20, C - 22)
+        .lineTo(C + 20, C - 22)
+        .moveTo(C - 20, C + 22)
+        .lineTo(C + 20, C + 22)
+        .stroke(ink);
+      break;
+    case 3:
+      g.poly([
+        C + 6,
+        C - 26,
+        C - 14,
+        C + 4,
+        C - 1,
+        C + 4,
+        C - 7,
+        C + 26,
+        C + 16,
+        C - 6,
+        C + 2,
+        C - 6,
+      ])
+        .fill(0xffd23f)
+        .stroke({ width: 2.5, color: P.OUTLINE, join: 'round' });
+      break;
+    default:
+      g.circle(C - 2, C + 4, 14).fill(0xf2e6ff);
+      g.moveTo(C - 24, C - 22)
+        .lineTo(C + 22, C + 24)
+        .stroke({ width: 7, color: 0xe63946, cap: 'round' });
+      g.circle(C, C, 28).stroke({ width: 5, color: 0xe63946 });
+      break;
+  }
+  return g;
+}
+
+function drawStreak(): Graphics {
+  const g = new Graphics();
+  g.ellipse(C, C, 44, 14).fill({ color: 0xffffff, alpha: 0.18 });
+  g.ellipse(C, C, 34, 9).fill({ color: 0xffffff, alpha: 0.3 });
+  g.ellipse(C + 6, C, 22, 4.5).fill({ color: 0xffffff, alpha: 0.5 });
+  return g;
+}
+
 /** Bakes every arena texture once. Call `destroy()` when the renderer goes away. */
 export function bakeArenaTextures(renderer: Renderer): ArenaTextures {
   const all: Texture[] = [];
@@ -597,24 +727,91 @@ export function bakeArenaTextures(renderer: Renderer): ArenaTextures {
   const particles: Texture[] = [];
   for (let k = 0; k < FX_KINDS; k++)
     particles.push(keep(bake(renderer, drawParticle(k), FX_TEX, FX_TEX)));
-  const puff: Texture[] = [];
   const badge: Texture[] = [];
   for (let s = 0; s < P.SEAT_COLORS.length; s++) {
-    puff.push(keep(bake(renderer, drawPuff(s), PUFF_TEX, PUFF_TEX)));
     badge.push(keep(bake(renderer, drawBadge(s), BADGE_TEX, BADGE_TEX)));
   }
 
+  const themes = new Map<string, ThemeTextures>();
+  const themeTextures = (id: string): ThemeTextures => {
+    const t = themeFor(id);
+    let baked = themes.get(t.id);
+    if (!baked) {
+      baked = {
+        theme: t,
+        floor: [cell(drawFloor(t.floorA, t.blade)), cell(drawFloor(t.floorB, t.blade))],
+        pillar: cell(drawPillar(t)),
+        crate: cell(drawCrate(t)),
+        block: cell(drawBlock(t)),
+      };
+      themes.set(t.id, baked);
+    }
+    return baked;
+  };
+  const garden = themeTextures('garden');
+
+  const lazy = new Map<string, Texture>();
+  const lazyTexture = (key: string, make: () => Texture): Texture => {
+    let t = lazy.get(key);
+    if (!t) {
+      t = keep(make());
+      lazy.set(key, t);
+    }
+    return t;
+  };
+  const puffOf = (puff: number, seat: number): Texture =>
+    lazyTexture(`puff:${puff}:${seat}`, () =>
+      bake(renderer, drawPuffArt(PUFFS[puff] ?? (PUFFS[0] as PuffDef), seat), PUFF_TEX, PUFF_TEX),
+    );
+  const popOf = (skin: number): Texture =>
+    lazyTexture(`pop:${skin}`, () =>
+      bake(renderer, drawPopSkin(POP_SKINS[skin] ?? (POP_SKINS[0] as PopSkinDef)), TEX, TEX),
+    );
+
+  const decals: DecalTextures = {
+    ice: cell(drawIceDecal()),
+    belt: [0, 1, 2].map((f) => cell(drawBeltDecal(f))),
+    teleport: cell(drawTeleportDecal()),
+    tunnel: cell(drawTunnelDecal()),
+    trampoline: cell(drawTrampolineDecal()),
+    grow: cell(drawGrowDecal()),
+  };
+  const power: PowerTextures = {
+    shield: cell(drawShieldBubble()),
+    jinxAura: cell(drawJinxAura()),
+    jinxGlyph: [0, 1, 2, 3, 4].map((e) => cell(e === 0 ? new Graphics() : drawJinxGlyph(e))),
+    streak: cell(drawStreak()),
+  };
+
   return {
-    floor: [cell(drawFloor(P.LAWN_A)), cell(drawFloor(P.LAWN_B))],
-    pillar: cell(drawPillar()),
-    crate: cell(drawCrate()),
-    block: cell(drawBlock()),
+    floor: garden.floor,
+    pillar: garden.pillar,
+    crate: garden.crate,
+    block: garden.block,
+    theme: themeTextures,
+    decals,
+    power,
+    puffOf,
+    hatOf: (hat) =>
+      lazyTexture(`hat:${hat}`, () =>
+        bake(renderer, drawHatArt(HATS[hat] ?? (HATS[0] as HatDef)), PUFF_TEX, PUFF_TEX),
+      ),
+    popOf,
     shadow: cell(drawShadow()),
-    puff,
+    puff: [0, 1, 2, 3].map((s) => puffOf(s, s)),
     badge,
     eyes,
-    pop: cell(drawPop(P.POP, P.POP_DARK)),
-    ghostPop: cell(drawPop(P.POP_GHOST, 0x7d68b8)),
+    pop: popOf(0),
+    ghostPop: cell(
+      drawPopSkin({
+        id: 'ghost',
+        body: P.POP_GHOST,
+        dark: 0x7d68b8,
+        pattern: 'none',
+        mark: 0xffffff,
+        unlock: START,
+      }),
+    ),
     fuseRing,
     flameCore: cell(drawFlameCore()),
     flameArm: cell(drawFlameArm()),
@@ -625,6 +822,8 @@ export function bakeArenaTextures(renderer: Renderer): ArenaTextures {
     destroy(): void {
       for (const t of all) t.destroy(true);
       all.length = 0;
+      themes.clear();
+      lazy.clear();
     },
   };
 }

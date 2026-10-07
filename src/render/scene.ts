@@ -9,6 +9,7 @@
  */
 
 import {
+  Ability,
   BombFlag,
   CELL_COUNT,
   FLAME_TICKS,
@@ -68,6 +69,12 @@ export interface PlayerView {
   rotation: number;
   /** Won the round: dances with happy eyes. */
   victory: boolean;
+  /** Carries an unspent Shield (bubble). */
+  shield: boolean;
+  /** Ticks of post-shield invulnerability left (the Puff flickers). */
+  invuln: number;
+  /** Active Jinx curse (`Jinx` effect id, 0 = none). */
+  jinx: number;
 }
 
 export interface BombView {
@@ -81,6 +88,8 @@ export interface BombView {
   pulse: number;
   /** Final half second: drawn with a white blink. */
   hot: boolean;
+  /** Slide direction (`Dir`) of a kicked / belt-carried bomb, 0 = resting. */
+  slide: number;
 }
 
 export interface FlameView {
@@ -113,6 +122,9 @@ export class Scene {
     hop: 0,
     rotation: 0,
     victory: false,
+    shield: false,
+    invuln: 0,
+    jinx: 0,
   }));
   readonly bombs: BombView[] = Array.from({ length: MAX_BOMBS }, () => ({
     x: 0,
@@ -122,6 +134,7 @@ export class Scene {
     owner: 0,
     pulse: 1,
     hot: false,
+    slide: 0,
   }));
   bombCount = 0;
   readonly flames: FlameView[] = Array.from({ length: CELL_COUNT }, () => ({
@@ -239,6 +252,9 @@ function fillPlayer(
   out.scared = alive && isScared(state, Math.floor(cx / TILE), Math.floor(cy / TILE));
   const phase = time + seat * 17;
   out.victory = alive && isRoundWinner(state, seat);
+  out.shield = alive && ((state.abilities[seat] as number) & Ability.SHIELD) !== 0;
+  out.invuln = alive ? (state.invuln[seat] as number) : 0;
+  out.jinx = alive ? (state.jinx[seat] as number) : 0;
   out.rotation = 0;
   if (out.victory) {
     // Victory dance: bouncy hops with a side-to-side wiggle.
@@ -310,6 +326,7 @@ export function extractScene(
     const full = view.ghost ? GHOST_BOMB_FUSE : FUSE_TICKS;
     view.pulse = popPulse(view.fuse, time + b * 7) * popInScale(full - fuseTicks + a);
     view.hot = fuseTicks <= HOT_FUSE_TICKS && Math.floor(time / 4) % 2 === 0;
+    view.slide = state.bombSlide[b] as number;
   }
   out.bombCount = n;
 

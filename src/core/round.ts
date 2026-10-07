@@ -34,6 +34,7 @@ import {
   GRID_H,
   GRID_W,
   Ability,
+  FloorFx,
   Hdr,
   Jinx,
   MAX_SEATS,
@@ -125,6 +126,12 @@ export function updateRoundClock(state: SimState, sink: EventSink): boolean {
   dropBlock(state, SPIRAL[index] as number, sink);
   const next = index + 1;
   hdr[Hdr.SD_INDEX] = next;
+  if (next >= SPIRAL.length) {
+    // Tunnel mouths sit on the outer ring, outside the spiral: seal them with the last block.
+    for (let c = 0; c < GRID_W * GRID_H; c++) {
+      if (state.floor[c] === FloorFx.TUNNEL) dropBlock(state, c, sink);
+    }
+  }
   hdr[Hdr.SD_TIMER] =
     next >= SPIRAL.length ? 0 : next === SD_PAUSE_AT ? SD_PAUSE_TICKS : SD_INTERVAL;
   return false;

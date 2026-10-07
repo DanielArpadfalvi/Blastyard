@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  Ability,
   BombFlag,
   Dir,
   FLAME_TICKS,
   FUSE_TICKS,
   GHOST_BOMB_FUSE,
   Hdr,
+  Jinx,
   NO_SIDE,
   Phase,
   Pickup,
@@ -236,6 +238,9 @@ describe('animation helpers', () => {
       hop: 0,
       rotation: 0,
       victory: false,
+      shield: false,
+      invuln: 0,
+      jinx: 0,
     };
     expect(eyeVariant(base)).toBe(Dir.LEFT);
     expect(eyeVariant({ ...base, scared: true, victory: true })).toBe(EYE_BLINK);
@@ -317,5 +322,36 @@ describe('FramePool', () => {
     expect(pool.active).toBe(1);
     expect(b.visible).toBe(false);
     expect(pool.size).toBe(2);
+  });
+});
+
+describe('scene: power-up visuals', () => {
+  it('reports shield, post-shield invulnerability and the Jinx curse per seat', () => {
+    const state = tinyArena(['######', '#01..#', '######']);
+    const scene = new Scene();
+    const history = new TickHistory();
+    extractScene(state, history, 0, scene);
+    expect(scene.players[0]!.shield).toBe(false);
+    expect(scene.players[0]!.jinx).toBe(0);
+
+    state.abilities[0] = Ability.SHIELD;
+    state.invuln[1] = 12;
+    state.jinx[1] = Jinx.HASTE;
+    extractScene(state, history, 0, scene);
+    expect(scene.players[0]!.shield).toBe(true);
+    expect(scene.players[1]!.shield).toBe(false);
+    expect(scene.players[1]!.invuln).toBe(12);
+    expect(scene.players[1]!.jinx).toBe(Jinx.HASTE);
+  });
+
+  it('reports the slide direction of kicked bombs', () => {
+    const state = tinyArena(['########', '#0.....#', '########']);
+    addBomb(state, 3, 1, 0, 200, 2);
+    const scene = new Scene();
+    extractScene(state, new TickHistory(), 0, scene);
+    expect(scene.bombs[0]!.slide).toBe(0);
+    state.bombSlide[0] = Dir.RIGHT;
+    extractScene(state, new TickHistory(), 0, scene);
+    expect(scene.bombs[0]!.slide).toBe(Dir.RIGHT);
   });
 });

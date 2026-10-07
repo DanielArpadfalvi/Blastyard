@@ -47,8 +47,9 @@ interface Golden {
 }
 
 /**
- * Golden hashes (SIM_VERSION 3). Any change here means the simulation changed: bump SIM_VERSION,
- * then update these values in the same change.
+ * Golden hashes (SIM_VERSION 4). Any change here means the simulation changed: bump SIM_VERSION,
+ * then update these values in the same change. Regenerated for 4 because the state buffer gained
+ * the floor layers (every hash changes); the end ticks are unchanged, so classic play is the same.
  */
 const GOLDEN: readonly Golden[] = [
   {
@@ -56,10 +57,10 @@ const GOLDEN: readonly Golden[] = [
     setup: { seed: 101, arena: ARENA_GARDEN, seats: [true, true, true, true] },
     bombOneIn: 60,
     covers: [EventKind.BOMB_EXPLODED, EventKind.CRATE_DESTROYED, EventKind.DEATH],
-    tick1: '2404ee82',
-    tick600: '1e76ffce',
+    tick1: '4b8d91e8',
+    tick600: '2503c290',
     endTick: 4779,
-    end: '49fe2d3e',
+    end: 'f7f70834',
   },
   {
     name: 'fast 2v2, crossroads',
@@ -72,10 +73,10 @@ const GOLDEN: readonly Golden[] = [
     },
     bombOneIn: 120,
     covers: [EventKind.BOMB_EXPLODED, EventKind.DEATH],
-    tick1: '12829470',
-    tick600: '4baea269',
+    tick1: '49ade8a6',
+    tick600: 'e9d56b2b',
     endTick: 3146,
-    end: 'b3a04138',
+    end: 'fef0887a',
   },
   {
     name: 'chaos, 3 seats, courtyard, 15 s rounds into sudden death, first to 1',
@@ -92,10 +93,10 @@ const GOLDEN: readonly Golden[] = [
       EventKind.BLOCK_DROPPED,
       EventKind.DEATH,
     ],
-    tick1: 'a213164a',
-    tick600: 'd9cda6c5',
+    tick1: '3f65d65c',
+    tick600: '4a0bdef7',
     endTick: 1380,
-    end: 'f6557241',
+    end: 'baae0603',
   },
 ];
 

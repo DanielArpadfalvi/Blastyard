@@ -24,6 +24,7 @@ import { bombCanEnter, bombsInUse } from '../bombs';
 import { DIR_DX, DIR_DY, Dir, encodeInput, type Direction } from '../input';
 import { CORNER_ASSIST, playerSpeed } from '../movement';
 import { RngStream, randInt } from '../rng';
+import { SD_PAUSE_AT } from '../round';
 import {
   Ability,
   CELL_COUNT,
@@ -170,6 +171,13 @@ function opponentInLine(state: SimState, cell: number, range: number, opponents:
     }
     if (clear) return true;
   }
+  return false;
+}
+
+/** Is an opponent cell within `reach` tiles (Manhattan) of `cell`? */
+function opponentWithin(cell: number, reach: number, opponents: number): boolean {
+  for (let o = 0; o < opponents; o++)
+    if (manhattan(cell, oppCells[o] as number) <= reach) return true;
   return false;
 }
 
@@ -532,6 +540,11 @@ function decide(
   search(state, seat, cell, tpt, GOAL_STEPS, true);
   const count = reachedCells();
   const sd = suddenDeathActive(state);
+  // Central 5x5 phase with three or more survivors (never a duel, so 1v1 play is untouched):
+  // nobody can hide any more, so a bot goes for an opponent in its blast line
+  // even without a guaranteed escape, and one a little further away is bombed too (zone control).
+  // This is what ends the standoffs of the final pause.
+  const desperate = sd && (state.hdr[Hdr.SD_INDEX] as number) >= SD_PAUSE_AT && opponents >= 2;
   const chase = Math.floor(profile.aggression / 5);
 
   // Trap candidates: attack cells (Hard) or any cell near an opponent (Expert) that really trap.
@@ -563,8 +576,11 @@ function decide(
         attack = Math.floor((profile.aggression * 6) / 10) + (trapBonus[c] as number);
       } else if ((trapBonus[c] as number) > 0) {
         attack = trapBonus[c] as number;
+      } else if (desperate && opponentWithin(c, range + 2, opponents)) {
+        attack = Math.floor((profile.aggression * 6) / 10);
       }
       if (crates > 0 || attack > 0) bomb = 1;
+      if (desperate && attack === 0) bomb = 0;
       value += crates * 25 + attack;
     }
     needsBomb[c] = bomb;
@@ -594,7 +610,7 @@ function decide(
     }
     if (best < 0) break;
     if (needsBomb[best] !== 0 && verified[best] === 0) {
-      const ok = canEscapeFrom(state, seat, best, profile);
+      const ok = canEscapeFrom(state, seat, best, profile) || desperate;
       computeDanger(state, seat, profile.reaction, profile.chain);
       if (!ok) {
         reject[best] = 1;
