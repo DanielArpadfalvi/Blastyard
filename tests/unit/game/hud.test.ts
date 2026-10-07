@@ -10,7 +10,7 @@ import {
   step,
   type SimState,
 } from '../../../src/core';
-import { GO_TICKS, formatClock, hudKey, hudModel } from '../../../src/game/hud';
+import { GO_TICKS, formatClock, HudSignature, hudKey, hudModel } from '../../../src/game/hud';
 
 function match(): SimState {
   return createState({
@@ -85,5 +85,21 @@ describe('hud model', () => {
     expect(hudKey(hudModel(s))).toBe(k1);
     for (let i = 0; i < 30; i++) step(s, [0, 0, 0, 0]);
     expect(hudKey(hudModel(s))).not.toBe(k1);
+  });
+
+  it('signature agrees with the key and reports changes only when the HUD changes', () => {
+    const s = match();
+    const sig = new HudSignature();
+    expect(sig.update(s)).toBe(true);
+    expect(sig.update(s)).toBe(false);
+    let key = hudKey(hudModel(s));
+    for (let i = 0; i < 600 && s.hdr[Hdr.PHASE] !== Phase.MATCH_OVER; i++) {
+      step(s, [0, 0, 0, 0]);
+      const k = hudKey(hudModel(s));
+      expect(sig.update(s)).toBe(k !== key);
+      key = k;
+    }
+    sig.reset();
+    expect(sig.update(s)).toBe(true);
   });
 });

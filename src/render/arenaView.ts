@@ -348,7 +348,8 @@ export class ArenaView {
         core.scale.set(k * girth * (flame.arms === 0 || isTip(flame.arms) ? 0.85 : 1));
         core.alpha = fade;
       }
-      for (const [bit, rotation] of ARM_ROTATION) {
+      for (let a = 0; a < ARM_ROTATION.length; a++) {
+        const [bit, rotation] = ARM_ROTATION[a] as readonly [number, number];
         if ((flame.arms & bit) === 0) continue;
         const arm = this.flameArms.next();
         arm.position.set(sx, sy);

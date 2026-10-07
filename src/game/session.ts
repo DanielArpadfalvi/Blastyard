@@ -37,7 +37,7 @@ import { solveLayout, type ArenaLayout } from '../render/layout';
 import { readSafeInsets } from '../render/safeArea';
 import type { ArenaTextures, ControlTextures } from '../render/textures';
 import { HapticsDirector } from './haptics';
-import { RESULT_DELAY_TICKS, hudKey, hudModel, type HudModel } from './hud';
+import { HudSignature, RESULT_DELAY_TICKS, hudModel, type HudModel } from './hud';
 import { MatchRunner } from './matchRunner';
 import {
   keyBindingsFor,
@@ -111,7 +111,11 @@ export class GameSession {
   private layout: ArenaLayout;
   private zonePlan: ZonePlan;
   private layoutKey = '';
+  private lastW = -1;
+  private lastH = -1;
+  private insetPoll = 0;
   private snapshotKey = '';
+  private readonly hudSig = new HudSignature();
   private matchEndTick = -1;
   private resultSent = false;
   private inputEnabled = true;
@@ -263,9 +267,16 @@ export class GameSession {
   }
 
   private relayout(): void {
-    const safe = readSafeInsets();
     const { width, height } = this.app.screen;
+    // getComputedStyle forces a style recalc: re-read the safe-area insets on a size change and
+    // about once a second, not every frame.
+    const sizeChanged = width !== this.lastW || height !== this.lastH;
+    if (!sizeChanged && this.layoutKey !== '' && ++this.insetPoll < 60) return;
+    this.insetPoll = 0;
+    const safe = readSafeInsets();
     const key = `${width}x${height}:${safe.top},${safe.right},${safe.bottom},${safe.left}`;
+    this.lastW = width;
+    this.lastH = height;
     if (key === this.layoutKey) return;
     this.layoutKey = key;
     this.layout = solveLayout({ width, height, safe });
@@ -292,13 +303,13 @@ export class GameSession {
   }
 
   private publish(): void {
-    const hud = hudModel(this.runner.state);
-    const key = `${hudKey(hud)}#${this.layoutKey}`;
-    if (key !== this.snapshotKey) {
-      this.snapshotKey = key;
+    // Allocation-free per frame; the HUD model is only built when something visible changed.
+    const changed = this.hudSig.update(this.runner.state);
+    if (changed || this.snapshotKey !== this.layoutKey) {
+      this.snapshotKey = this.layoutKey;
       this.callbacks.onSnapshot?.({
         mode: this.mode,
-        hud,
+        hud: hudModel(this.runner.state),
         layout: this.layout,
         plan: this.plan,
         zones: this.zonePlan,
