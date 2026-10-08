@@ -3,7 +3,7 @@
 Current state, next steps and local setup for the next session (human or agent). Updated after
 every finished task (rule in `CLAUDE.md`).
 
-## Last update: 2026-10-08 – M6 complete (T6.1 menus, T6.2 save & progression, T6.3 i18n & a11y)
+## Last update: 2026-10-08 – M7: T7.1 shell + T7.2 assets done, T7.3 native CI waiting on the owner's device check
 
 ### Done in the latest session (branch `claude/relaxed-allen-18zaek`)
 - **T5.3 daily challenge** – `src/game/daily.ts`, `dailyStore.ts`, `src/ui/DailyScreen.tsx`; the
@@ -24,6 +24,16 @@ every finished task (rule in `CLAUDE.md`).
 - **T6.3 i18n & accessibility** – `tests/unit/i18nStrings.test.ts` (no hard-coded UI strings,
   placeholder parity), HU overflow checks at 667×375 / 1280×720 / 2048×1536 in
   `tests/e2e/menus.spec.ts`, small-phone CSS (scrolling cards, compact start card).
+- **T7.1 Capacitor shell** – `src/platform/system.ts` (keep-awake, orientation lock, gesture
+  exclusion; shell enables it for lobby + matches), own native plugin
+  (`android/app/src/main/java/app/blastyard/BlastyardSystemPlugin.java`,
+  `ios/App/App/BlastyardSystemPlugin.swift`), iOS project (SPM) with `BlastyardViewController`,
+  bundle id only in `capacitor.config.ts` (Gradle reads the synced config; iOS via
+  `ios/app-id.xcconfig` from `scripts/native-config.ts`, run by the `capacitor:sync:after` hook).
+- **T7.2 assets** – `scripts/brand.ts` (SVG art) + `npm run assets` (headless Chromium renders all
+  Android / iOS / web icons and splashes; committed).
+- **T7.3 native CI** – `android.yml` (debug APK + unsigned AAB; pre-release only from main),
+  `ios.yml` (macOS: simulator + unsigned device build; also on `claude/**` when iOS inputs change).
 - Details per task: `docs/TASKS.md` (the "Done:" notes under each task).
 
 ### State of the checks
@@ -49,8 +59,38 @@ every finished task (rule in `CLAUDE.md`).
 - Friendly rule / corner assist never apply to challenges, daily or tutorial (their reference
   solutions run on the default rules).
 
+### Native builds
+- Not possible in this container (dl.google.com blocked, no macOS). Verify in GitHub Actions:
+  `android.yml` can be started on any branch (workflow_dispatch); `ios.yml` runs on push when
+  iOS inputs change (workflow_dispatch only works once the file is on main).
+- After changing native code or Capacitor plugins: `npm run build && npx cap sync` locally
+  (regenerates `capacitor.settings.gradle`, `CapApp-SPM/Package.swift`, `ios/app-id.xcconfig`).
+
 ### Open owner tasks
 - T2.4 device touch spike (`docs/touch-spike.md` §1–3) and the gamepad device check (§4).
+- T7.3: install the debug APK (artifact `blastyard-debug-apk`, or the `android-debug-latest`
+  pre-release once on main) on a device for the touch re-check; try an iOS build on a Mac.
+
+### Next step
+- **M8 – T8.1 Purchases**: RevenueCat implementation behind `src/platform/entitlement.ts`
+  (interface already has `hasPlus`, `subscribe`, `restore`; add products / buy / pending states),
+  paywall UI, single hint card after the 5th finished match, `?test` mock purchase flow, test that
+  no party feature / player count / bot level / power-up is gated. RevenueCat keys are owner
+  secrets; without a key the native build shows "store unavailable" (never unlocks).
+- Then M9 release prep (store texts, screenshot generator, privacy site, QA, release workflow).
+- Gamepad polish (later): menu navigation with a controller, Start = pause.
+
+### Native builds
+- Not possible in this container (dl.google.com blocked, no macOS). Verify in GitHub Actions:
+  `android.yml` can be started on any branch (workflow_dispatch); `ios.yml` runs on push when
+  iOS inputs change (workflow_dispatch only works once the file is on main).
+- After changing native code or Capacitor plugins: `npm run build && npx cap sync` locally
+  (regenerates `capacitor.settings.gradle`, `CapApp-SPM/Package.swift`, `ios/app-id.xcconfig`).
+
+### Open owner tasks
+- T2.4 device touch spike (`docs/touch-spike.md` §1–3) and the gamepad device check (§4).
+- T7.3: install the debug APK (artifact `blastyard-debug-apk`, or the `android-debug-latest`
+  pre-release once on main) on a device for the touch re-check; try an iOS build on a Mac.
 
 ### Next step
 - **M7 – T7.1 Capacitor 8 shell**: Android project exists (keep-awake + immersive in
