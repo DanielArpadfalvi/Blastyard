@@ -20,6 +20,10 @@ function resolveChromiumExecutable(): string | undefined {
 
 const executablePath = resolveChromiumExecutable();
 
+const PERF = /perf\.spec\.ts/;
+/** Specs that render in real time at large sizes (see the `heavy` project). */
+const HEAVY = /(feel|spike|render)\.spec\.ts/;
+
 export default defineConfig({
   testDir: 'tests/e2e',
   outputDir: 'test-results',
@@ -41,7 +45,19 @@ export default defineConfig({
     {
       // Landscape-only game: a phone held sideways or laid flat on the table.
       name: 'landscape-chromium',
-      testIgnore: /perf\.spec\.ts/,
+      testIgnore: [PERF, HEAVY],
+      use: {
+        ...devices['Pixel 7 landscape'],
+        browserName: 'chromium',
+        launchOptions: executablePath ? { executablePath } : {},
+      },
+    },
+    {
+      // Real-time render / effect flows at large viewports: under software WebGL they need the
+      // CPU to themselves (next to the other specs they ran out of time or crashed the renderer).
+      name: 'heavy',
+      testMatch: HEAVY,
+      dependencies: ['landscape-chromium'],
       use: {
         ...devices['Pixel 7 landscape'],
         browserName: 'chromium',
@@ -51,8 +67,8 @@ export default defineConfig({
     {
       // Frame-rate measurement (T3.3): runs after the other tests so nothing competes for the CPU.
       name: 'perf',
-      testMatch: /perf\.spec\.ts/,
-      dependencies: ['landscape-chromium'],
+      testMatch: PERF,
+      dependencies: ['heavy'],
       use: {
         ...devices['Pixel 7 landscape'],
         browserName: 'chromium',
