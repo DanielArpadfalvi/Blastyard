@@ -163,8 +163,9 @@ function dropBlock(state: SimState, cell: number, sink: EventSink): void {
 
 /** Does a flame laid by `owner` hurt `victim`? */
 function flameHurts(state: SimState, owner: number, victim: number): boolean {
-  if (owner === victim || owner === NO_OWNER) return true;
   const flags = state.hdr[Hdr.RULE_FLAGS] as number;
+  if (owner === victim) return (flags & RuleFlag.NO_SELF_DAMAGE) === 0;
+  if (owner === NO_OWNER) return true;
   if ((flags & RuleFlag.TEAMS) === 0 || (flags & RuleFlag.FRIENDLY_FIRE) !== 0) return true;
   return sideOf(state, owner) !== sideOf(state, victim);
 }

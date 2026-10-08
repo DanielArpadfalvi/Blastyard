@@ -28,6 +28,8 @@ export interface StartScreenProps {
   /** Initial bot seats for the four-corner prototype. */
   cornerBots?: number;
   onSettings?: () => void;
+  /** Saves the language choice (settings); without it the switch only changes the session. */
+  onLanguage?: (lang: 'en' | 'hu') => void;
 }
 
 /** Start screen: Quick Match, Party, Challenges, Daily, Tutorial and the first-playable modes. */
@@ -46,6 +48,7 @@ export function StartScreen({
   onTouchTest,
   cornerBots = 0,
   onSettings,
+  onLanguage,
 }: StartScreenProps) {
   const [bots, setBots] = useState(cornerBots);
   return (
@@ -54,7 +57,11 @@ export function StartScreen({
         type="button"
         class="lang-switch"
         data-testid="lang-switch"
-        onClick={() => setLanguage(getLanguage() === 'hu' ? 'en' : 'hu')}
+        onClick={() => {
+          const next = getLanguage() === 'hu' ? 'en' : 'hu';
+          if (onLanguage) onLanguage(next);
+          else setLanguage(next);
+        }}
       >
         {t('switchLanguage')}
       </button>

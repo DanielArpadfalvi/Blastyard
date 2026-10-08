@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { defineConfig, type Plugin } from 'vite';
 import preact from '@preact/preset-vite';
@@ -35,8 +35,12 @@ function sourcemapsOutsideDist(): Plugin {
  */
 const BASE = process.env.VITE_BASE?.trim() || './';
 
+/** App version shown in Settings → About (single source: package.json). */
+const VERSION = (JSON.parse(readFileSync('package.json', 'utf8')) as { version: string }).version;
+
 export default defineConfig({
   plugins: [preact(), sourcemapsOutsideDist()],
+  define: { __APP_VERSION__: JSON.stringify(VERSION) },
   base: BASE,
   server: { port: 5173, strictPort: true },
   preview: { port: 4173, strictPort: true },

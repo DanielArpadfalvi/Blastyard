@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'preact/hooks';
+import { useCallback, useEffect, useRef, useState } from 'preact/hooks';
 import type { PartyConfig } from '../game/party';
 import { isDailyLevel } from '../game/daily';
 import type { SessionSnapshot } from '../game/session';
@@ -66,24 +66,60 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
   const result = state?.result;
   const challengeResult = state?.challengeResult;
   const paused = state?.snapshot?.paused === true;
-  useEffect(() => {
-    if (!shell || (screen !== 'playing' && screen !== 'lobby')) return undefined;
-    // Desktop: Escape pauses the match (and resumes it); in the lobby it goes back.
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.code !== 'Escape') return;
-      if (screen === 'lobby') {
-        shell.showMenu();
-        setMenuView('party');
-      } else shell.setPaused(!paused);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [shell, screen, paused]);
-
   const toMenu = (view: MenuView = 'start'): void => {
     shell?.showMenu();
     setMenuView(view);
   };
+
+  /**
+   * One step back (Android back button, Escape on desktop; T6.1): close a panel, pause / resume
+   * the match, leave the lobby or a result, go up a menu level. False on the start screen, where
+   * the platform may leave the app.
+   */
+  const goBack = (): boolean => {
+    if (!shell) return false;
+    if (tester) {
+      setTester(false);
+      return true;
+    }
+    if (settings) {
+      setSettings(false);
+      return true;
+    }
+    switch (screen) {
+      case 'playing':
+        shell.setPaused(!paused);
+        return true;
+      case 'lobby':
+        toMenu('party');
+        return true;
+      case 'result':
+      case 'tutorialDone':
+        toMenu();
+        return true;
+      case 'challengeResult':
+        toMenu(challengeResult?.daily ? 'daily' : 'challenges');
+        return true;
+      default:
+        if (menuView === 'start') return false;
+        setMenuView('start');
+        return true;
+    }
+  };
+  const back = useRef(goBack);
+  back.current = goBack;
+  useEffect(() => {
+    if (!shell) return undefined;
+    shell.back.setHandler(() => back.current());
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.code === 'Escape') shell.back.trigger();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      shell.back.setHandler(null);
+    };
+  }, [shell]);
   const stored = shell?.getParty();
   const prepareDaily = useCallback(
     () => (shell ? shell.prepareDaily() : Promise.reject(new Error('no shell'))),
@@ -102,6 +138,7 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
           onDaily={() => setMenuView('daily')}
           dailyStreak={shell.daily.view(shell.today()).streak}
           onTutorial={() => shell.startTutorial()}
+          onLanguage={(lang) => shell.settings.update({ language: lang })}
           tutorialDone={shell.tips.tutorialDone}
           quickLevel={stored?.quickLevel}
           onQuickLevel={(level) => {
@@ -147,7 +184,15 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
         />
       )}
       {shell && screen === 'menu' && settings && (
-        <SettingsPanel store={shell.settings} onBack={() => setSettings(false)} />
+        <SettingsPanel
+          store={shell.settings}
+          entitlements={shell.entitlements}
+          onTouchTest={() => {
+            setSettings(false);
+            setTester(true);
+          }}
+          onBack={() => setSettings(false)}
+        />
       )}
       {tester && <TouchTester onBack={() => setTester(false)} />}
       {shell &&

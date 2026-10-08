@@ -125,6 +125,9 @@ export function createState(setup: MatchSetup): SimState {
   if (setup.warmup) flags |= RuleFlag.HARMLESS;
   if (rules.ghosts) flags |= RuleFlag.GHOSTS;
   if (rules.friendlyFire) flags |= RuleFlag.FRIENDLY_FIRE;
+  if (rules.selfDamage === false) flags |= RuleFlag.NO_SELF_DAMAGE;
+  if (rules.cornerAssist === 'low') flags |= RuleFlag.ASSIST_LOW;
+  if (rules.cornerAssist === 'high') flags |= RuleFlag.ASSIST_HIGH;
   if (setup.teams) flags |= RuleFlag.TEAMS;
   hdr[Hdr.RULE_FLAGS] = flags;
   hdr[Hdr.ROUND_TICKS] = setup.warmup

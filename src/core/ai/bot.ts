@@ -22,7 +22,7 @@
 
 import { bombCanEnter, bombsInUse } from '../bombs';
 import { DIR_DX, DIR_DY, Dir, encodeInput, type Direction } from '../input';
-import { CORNER_ASSIST, playerSpeed } from '../movement';
+import { cornerAssist, playerSpeed } from '../movement';
 import { monsterCell } from '../monsters';
 import { RngStream, randInt } from '../rng';
 import { SD_PAUSE_AT } from '../round';
@@ -127,11 +127,14 @@ function cellY(cell: number): number {
  * centre): a turn the corner assist cannot take yet first walks towards the centre, keeping the
  * turn as the secondary direction.
  */
+/** Corner-assist window of the match being decided (set by {@link botInput} for each call). */
+let assistWindow = 96;
+
 function steer(move: Direction, dx: number, dy: number): number {
   if (move === Dir.NONE) return 0;
   const horizontal = move === Dir.LEFT || move === Dir.RIGHT;
   const off = horizontal ? dy : dx;
-  if (Math.abs(off) <= CORNER_ASSIST) return encodeInput(move);
+  if (Math.abs(off) <= assistWindow) return encodeInput(move);
   const settle = horizontal ? (off > 0 ? Dir.DOWN : Dir.UP) : off > 0 ? Dir.RIGHT : Dir.LEFT;
   return encodeInput(settle, move);
 }
@@ -401,6 +404,7 @@ export function botInput(state: SimState, seat: number): number {
   if (!state.alive[seat]) {
     return state.ghost[seat] ? ghostInput(state, seat) : 0;
   }
+  assistWindow = cornerAssist(state);
   const profile = botProfile(botLevel(state, seat));
   const out = aliveInput(state, seat, profile);
   // A reversed-controls curse flips the input once more inside `step`: pre-flip it.

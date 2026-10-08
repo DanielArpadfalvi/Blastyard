@@ -141,6 +141,9 @@ export {
 export {
   BASE_SPEED,
   CORNER_ASSIST,
+  CORNER_ASSIST_HIGH,
+  CORNER_ASSIST_LOW,
+  cornerAssist,
   MAX_SPEED_LEVEL,
   ROLLER_SPEED,
   conveyPlayer,

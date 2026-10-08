@@ -23,8 +23,12 @@ export interface Rules {
   readonly suddenDeath: 'spiral' | 'none';
   /** Eliminated players haunt the outer wall and drop revenge bombs. */
   readonly ghosts: boolean;
-  /** Team mode only: may teammates' flames hurt you? (Your own flames always do.) */
+  /** Team mode only: may teammates' flames hurt you? (Your own flames do unless `selfDamage` is off.) */
   readonly friendlyFire: boolean;
+  /** Do your own flames hurt you? (`false` = the friendly rule, PLAN §1.12.) */
+  readonly selfDamage?: boolean;
+  /** Corner-assist strength (default `normal`). */
+  readonly cornerAssist?: 'low' | 'normal' | 'high';
 }
 
 /** Kept for callers written against the T1.1–T1.3 API. */

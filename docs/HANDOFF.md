@@ -3,7 +3,7 @@
 Current state, next steps and local setup for the next session (human or agent). Updated after
 every finished task (rule in `CLAUDE.md`).
 
-## Last update: 2026-10-08 – T5.5 gamepad done (M5 complete except the owner's device spike)
+## Last update: 2026-10-08 – T6.1 menus & flow done (only the Customize entry waits for T6.2)
 
 ### Done in the latest session (branch `claude/relaxed-allen-18zaek`)
 - **T5.3 daily challenge** – `src/game/daily.ts`, `dailyStore.ts`, `src/ui/DailyScreen.tsx`; the
@@ -12,12 +12,18 @@ every finished task (rule in `CLAUDE.md`).
   new `chain` objective), `src/game/tips.ts`, `src/ui/Tutorial.tsx`.
 - **T5.5 gamepad** – `src/input/gamepad.ts`, `webGamepads()` in `src/input/dom.ts`, controller
   badge in `src/ui/Hud.tsx`; spike notes in `docs/touch-spike.md` §4.
+- **T6.1 menus & flow** – settings sections (`src/ui/SettingsPanel.tsx`, `src/game/settings.ts`),
+  friendly rule + corner-assist strength as core rule flags (defaults unchanged, no `SIM_VERSION`
+  bump), control prefs (`touchParamsFor`, `zonesForPlan(…, prefs)`), result stats table,
+  back handling (`src/platform/back.ts` + `goBack` in `src/ui/App.tsx`), `@capacitor/app`
+  dependency (the Android CI's `cap sync` registers it; `cap update` fails locally without
+  built assets – harmless).
 - Details per task: `docs/TASKS.md` (the "Done:" notes under each task).
 
 ### State of the checks
 - `npm run check`: green (typecheck, lint, format, unit tests, content validation incl. the
   tutorial's reference solution).
-- e2e: all new specs green (`daily`, `tutorial`, `gamepad`). Known red **in this cloud container
+- e2e: all new specs green (`daily`, `tutorial`, `gamepad`, `menus`). Known red **in this cloud container
   only**, also without these changes: `feel.spec.ts` (5 tests) and the 2048×1536 touch tester in
   `spike.spec.ts` time out (slow software WebGL; CI gives 120 s). `render.spec.ts` 2048×1536 can
   time out when the whole suite runs in parallel; alone it passes.
@@ -37,10 +43,14 @@ every finished task (rule in `CLAUDE.md`).
 - T2.4 device touch spike (`docs/touch-spike.md` §1–3) and the gamepad device check (§4).
 
 ### Next step
-- **M6 – T6.1 Menus & flow** (main menu with every mode incl. Daily / Tutorial, results, settings
-  screen with all options listed in TASKS, Android back handling), then T6.2 save `save.v1`
-  (migrate the separate keys above), T6.3 i18n lint.
-- Gamepad polish for T6.1: menu navigation with a controller, Start = pause.
+- **T6.2 Save & progression**: versioned `save.v1` with a migration hook that folds in the
+  separate keys (`blastyard.challenges.v1`, `.daily.v1`, `.tips.v1`, `.party.v1`,
+  `.settings.v1`), lifetime stats (feed from `MatchResult.stats` / challenge results), 20 local
+  trophies, milestone unlocks for the cosmetics (`src/content/cosmetics.ts` `Unlock` kinds
+  matches / wins / stars / streak), and the **Customize** screen (per-seat Puff / hat / pop /
+  trail via `ArenaView.setAppearance`) with its main-menu entry – that finishes T6.1 too.
+- Then T6.3 i18n lint + accessibility pass.
+- Gamepad polish (later): menu navigation with a controller, Start = pause.
 
 ## Local setup
 - `npm ci`, then `npm run check` (≈ 1 min) before every commit; `npm run test:e2e` for UI changes.

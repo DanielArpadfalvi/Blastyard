@@ -32,7 +32,9 @@ import {
 import {
   Ability,
   FloorFx,
+  Hdr,
   Jinx,
+  RuleFlag,
   Tile,
   cellIndex,
   inBounds,
@@ -50,6 +52,17 @@ export const ROLLER_SPEED = 2;
 export const MAX_SPEED_LEVEL = 4;
 /** Corner assist window in subunits from the tile centre (37.5% of a tile). */
 export const CORNER_ASSIST = 96;
+/** Assist windows of the weaker / stronger setting (`RuleFlag.ASSIST_LOW` / `ASSIST_HIGH`). */
+export const CORNER_ASSIST_LOW = 48;
+export const CORNER_ASSIST_HIGH = 120;
+
+/** The match's corner-assist window. */
+export function cornerAssist(state: SimState): number {
+  const flags = state.hdr[Hdr.RULE_FLAGS] as number;
+  if ((flags & RuleFlag.ASSIST_LOW) !== 0) return CORNER_ASSIST_LOW;
+  if ((flags & RuleFlag.ASSIST_HIGH) !== 0) return CORNER_ASSIST_HIGH;
+  return CORNER_ASSIST;
+}
 
 export function playerSpeed(state: SimState, seat: number): number {
   const lvl = Math.min(state.speedLvl[seat] as number, MAX_SPEED_LEVEL);
@@ -122,7 +135,7 @@ function tryDirection(
     state.moveDir[seat] = dir;
     return true;
   }
-  if (Math.abs(off) > CORNER_ASSIST) return false;
+  if (Math.abs(off) > cornerAssist(state)) return false;
   const tx = toTile(state.px[seat] as number);
   const ty = toTile(state.py[seat] as number);
   if (!isPassable(state, seat, tx + (DIR_DX[dir] as number), ty + (DIR_DY[dir] as number))) {

@@ -10,7 +10,12 @@ export interface Entitlements {
   hasPlus(): boolean;
   /** Calls `fn` whenever the entitlement changes; returns the unsubscribe function. */
   subscribe(fn: (hasPlus: boolean) => void): () => void;
+  /** Restore purchases (settings / paywall): what the store reported. */
+  restore(): Promise<RestoreResult>;
 }
+
+/** `restored`: Blastyard+ is owned now; `nothing`: no purchase found; `unavailable`: no store. */
+export type RestoreResult = 'restored' | 'nothing' | 'unavailable';
 
 /** A mutable in-memory entitlement (mock purchases, tests, `?plus`). */
 export interface MockEntitlements extends Entitlements {
@@ -22,6 +27,8 @@ export function mockEntitlements(initialPlus = false): MockEntitlements {
   const listeners = new Set<(hasPlus: boolean) => void>();
   return {
     hasPlus: () => plus,
+    // The mock store knows no purchases beyond the flag itself.
+    restore: () => Promise.resolve(plus ? 'restored' : 'nothing'),
     subscribe(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);

@@ -1,6 +1,7 @@
 /**
- * Player settings that shape the game feel (T3.2/T3.3): music and effect volume, haptics, game
- * speed and reduced motion. Persisted as JSON through the platform key-value store; anything
+ * Player settings (T3.2/T3.3, T6.1): music and effect volume, haptics, game speed, reduced motion,
+ * language, controls (scheme, left-handed swap, zone size), corner-assist strength, the friendly
+ * rule and larger text. Persisted as JSON through the platform key-value store; anything
  * missing or invalid falls back to the default, so a corrupt entry never breaks the game. The
  * full settings screen and the versioned save come with T6.1/T6.2.
  *
@@ -20,6 +21,22 @@ export type GameSpeed = (typeof GAME_SPEEDS)[number];
 export const HAPTICS_OPTIONS = ['auto', 'on', 'off'] as const;
 export type HapticsSetting = (typeof HAPTICS_OPTIONS)[number];
 
+/** `auto` follows the device language. */
+export const LANGUAGE_OPTIONS = ['auto', 'en', 'hu'] as const;
+export type LanguageSetting = (typeof LANGUAGE_OPTIONS)[number];
+
+/** Two thumbs (floating stick + bomb button) or one finger (stick, tap = pop) when alone. */
+export const SCHEME_OPTIONS = ['twoThumb', 'oneFinger'] as const;
+export type SchemeSetting = (typeof SCHEME_OPTIONS)[number];
+
+/** Zone size slider (PLAN §1.4: 80–120 %): scales the bomb button and the stick follow radius. */
+export const ZONE_SCALES = [80, 90, 100, 110, 120] as const;
+export type ZoneScale = (typeof ZONE_SCALES)[number];
+
+/** Corner-assist strength (PLAN §1.12). */
+export const ASSIST_OPTIONS = ['low', 'normal', 'high'] as const;
+export type AssistSetting = (typeof ASSIST_OPTIONS)[number];
+
 export interface Settings {
   /** 0–1. */
   readonly musicVolume: number;
@@ -29,6 +46,15 @@ export interface Settings {
   readonly gameSpeed: GameSpeed;
   /** No screen shake or flash, fewer particles. */
   readonly reducedMotion: boolean;
+  readonly language: LanguageSetting;
+  readonly scheme: SchemeSetting;
+  /** Stick on the right, bomb button on the left. */
+  readonly leftHanded: boolean;
+  readonly zoneScale: ZoneScale;
+  readonly cornerAssist: AssistSetting;
+  /** Friendly rule: your own pops never knock you out (party / quick / solo, not challenges). */
+  readonly friendly: boolean;
+  readonly largeText: boolean;
 }
 
 export function defaultSettings(systemReducedMotion = false): Settings {
@@ -38,7 +64,22 @@ export function defaultSettings(systemReducedMotion = false): Settings {
     haptics: 'auto',
     gameSpeed: 100,
     reducedMotion: systemReducedMotion,
+    language: 'auto',
+    scheme: 'twoThumb',
+    leftHanded: false,
+    zoneScale: 100,
+    cornerAssist: 'normal',
+    friendly: false,
+    largeText: false,
   };
+}
+
+function oneOf<T>(options: readonly T[], value: unknown, fallback: T): T {
+  return options.includes(value as T) ? (value as T) : fallback;
+}
+
+function bool(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
 }
 
 function volume(value: unknown, fallback: number): number {
@@ -58,7 +99,14 @@ export function sanitizeSettings(raw: unknown, defaults: Settings): Settings {
     gameSpeed: GAME_SPEEDS.includes(o.gameSpeed as GameSpeed)
       ? (o.gameSpeed as GameSpeed)
       : defaults.gameSpeed,
-    reducedMotion: typeof o.reducedMotion === 'boolean' ? o.reducedMotion : defaults.reducedMotion,
+    reducedMotion: bool(o.reducedMotion, defaults.reducedMotion),
+    language: oneOf(LANGUAGE_OPTIONS, o.language, defaults.language),
+    scheme: oneOf(SCHEME_OPTIONS, o.scheme, defaults.scheme),
+    leftHanded: bool(o.leftHanded, defaults.leftHanded),
+    zoneScale: oneOf(ZONE_SCALES, o.zoneScale, defaults.zoneScale),
+    cornerAssist: oneOf(ASSIST_OPTIONS, o.cornerAssist, defaults.cornerAssist),
+    friendly: bool(o.friendly, defaults.friendly),
+    largeText: bool(o.largeText, defaults.largeText),
   };
 }
 

@@ -30,6 +30,8 @@ import {
   Phase,
   createState,
   type ArenaDef,
+  type MatchSetup,
+  type Rules,
   type SimEvent,
   type SimState,
 } from '../core';
@@ -67,11 +69,14 @@ import { HudSignature, RESULT_DELAY_TICKS, hudModel, type HudModel } from './hud
 import { LobbyTracker, type LobbySeatView } from './lobby';
 import { MatchRunner } from './matchRunner';
 import {
+  DEFAULT_CONTROL_PREFS,
   keyBindingsFor,
   layoutKindOf,
   matchSetupFor,
   seatPlan,
+  touchParamsFor,
   zonesForPlan,
+  type ControlPrefs,
   type GameMode,
   type LayoutKind,
   type SeatPlan,
@@ -109,6 +114,10 @@ export interface SessionOptions {
   readonly feel?: SessionFeel;
   /** Controllers (T5.5; shared by the shell so claims last across matches). */
   readonly gamepads?: GamepadSeats;
+  /** Touch control preferences from the settings (T6.1). */
+  readonly controls?: ControlPrefs;
+  /** Player rule options (friendly rule, corner assist) for party / quick / first-playable modes. */
+  readonly ruleTweaks?: Pick<Rules, 'selfDamage' | 'cornerAssist'>;
 }
 
 export interface SessionFeel {
@@ -143,6 +152,16 @@ export interface SessionSnapshot {
   readonly gamepadSeats: readonly number[];
 }
 
+/** What a seat did over a whole match (results screen, later the save's stats). */
+export interface SeatStats {
+  /** Opponents knocked out by this seat's flames. */
+  readonly knockouts: number;
+  /** Times this seat was knocked out by its own pop. */
+  readonly selfKnockouts: number;
+  readonly pops: number;
+  readonly powerUps: number;
+}
+
 export interface MatchResult {
   readonly mode: GameMode;
   /** Winning side (= seat in free-for-all, team id in 2v2). */
@@ -152,6 +171,8 @@ export interface MatchResult {
   readonly rounds: number;
   readonly plan: readonly SeatPlan[];
   readonly teams: readonly number[] | null;
+  /** Per seat (index = seat). */
+  readonly stats: readonly SeatStats[];
 }
 
 /** How a challenge ended. */
@@ -209,7 +230,7 @@ export function lobbyArena(arena: ArenaDef): ArenaDef {
 
 export class GameSession {
   readonly plan: SeatPlan[];
-  readonly zones = new TouchZones();
+  readonly zones: TouchZones;
   readonly kind: LayoutKind;
   private runnerRef: MatchRunner;
   private readonly keyboard: KeyboardSeats;
@@ -235,6 +256,12 @@ export class GameSession {
   private readonly lastInputs = new Uint8Array(MAX_SEATS);
   private script: Uint8Array | null = null;
   private pendingEvents: readonly SimEvent[] = NO_EVENTS;
+  private readonly seatStats = Array.from({ length: MAX_SEATS }, () => ({
+    knockouts: 0,
+    selfKnockouts: 0,
+    pops: 0,
+    powerUps: 0,
+  }));
   private readonly lobbyTracker: LobbyTracker | null;
   private lobbyDone = false;
   private readonly tracker: ChallengeTracker | null;
@@ -256,6 +283,7 @@ export class GameSession {
     const { mode } = options;
     if (mode === 'party' && !options.party) throw new Error('party mode needs a party plan');
     if (mode === 'challenge' && !options.challenge) throw new Error('challenge mode needs a level');
+    this.zones = new TouchZones(touchParamsFor(options.controls ?? DEFAULT_CONTROL_PREFS));
     this.plan = this.initialPlan();
     this.kind = options.party?.layout ?? layoutKindOf(mode);
     this.tracker = options.challenge
@@ -294,7 +322,7 @@ export class GameSession {
     }
 
     this.layout = solveLayout({ width: app.screen.width, height: app.screen.height });
-    this.zonePlan = zonesForPlan(this.kind, this.layout, this.plan);
+    this.zonePlan = zonesForPlan(this.kind, this.layout, this.plan, this.options.controls);
     this.relayout();
     this.tickerFn = (ticker) => this.frame(ticker.deltaMS);
     app.ticker.add(this.tickerFn);
@@ -325,14 +353,20 @@ export class GameSession {
     const { mode, party, challenge, lobby, seed, arena } = this.options;
     if (party) {
       return createState(
-        partyMatchSetup(party, seed, lobby ? lobbyArena(arena) : arena, lobby === true),
+        this.tweak(partyMatchSetup(party, seed, lobby ? lobbyArena(arena) : arena, lobby === true)),
       );
     }
     if (challenge) {
       const k = challenge.startStage ?? 0;
       return createState(stageSetup(challenge.level, k, challenge.tuning.seeds[k] ?? seed));
     }
-    return createState(matchSetupFor(mode, this.options));
+    return createState(this.tweak(matchSetupFor(mode, this.options)));
+  }
+
+  /** Applies the player's rule options to a party / first-playable match setup. */
+  private tweak(setup: MatchSetup): MatchSetup {
+    const tweaks = this.options.ruleTweaks;
+    return tweaks ? { ...setup, rules: { ...setup.rules, ...tweaks } } : setup;
   }
 
   /** Arena of the stage / match being played (theme for the renderer). */
@@ -511,7 +545,7 @@ export class GameSession {
     if (key === this.layoutKey) return;
     this.layoutKey = key;
     this.layout = solveLayout({ width, height, safe });
-    this.zonePlan = zonesForPlan(this.kind, this.layout, this.plan);
+    this.zonePlan = zonesForPlan(this.kind, this.layout, this.plan, this.options.controls);
     this.view.setLayout(this.layout);
     this.zones.setLayout(this.zonePlan.zones, this.zonePlan.arena);
     const soloSeat = this.zonePlan.zones[0]?.seat ?? 0;
@@ -529,7 +563,10 @@ export class GameSession {
 
   private onEvents(events: readonly SimEvent[]): void {
     this.pendingEvents = events;
-    for (const e of events) if (e.kind === EventKind.MATCH_END) this.matchEndTick = e.tick;
+    for (const e of events) {
+      if (e.kind === EventKind.MATCH_END) this.matchEndTick = e.tick;
+      else this.countStat(e);
+    }
     this.view.pushEvents(events, this.runnerRef.state);
     this.audio?.onEvents(events);
     this.haptics?.onEvents(events);
@@ -538,6 +575,30 @@ export class GameSession {
         const tip = tipForEvent(e, this.humanSeats);
         if (tip) this.callbacks.onTip(tip);
       }
+    }
+  }
+
+  /** Match statistics per seat from the event stream. */
+  private countStat(e: SimEvent): void {
+    const at = this.seatStats[e.seat];
+    switch (e.kind) {
+      case EventKind.BOMB_PLACED:
+        if (at) at.pops++;
+        break;
+      case EventKind.PICKUP_COLLECTED:
+        if (at) at.powerUps++;
+        break;
+      case EventKind.DEATH: {
+        if (e.value === e.seat) {
+          if (at) at.selfKnockouts++;
+        } else {
+          const killer = this.seatStats[e.value];
+          if (killer) killer.knockouts++;
+        }
+        break;
+      }
+      default:
+        break;
     }
   }
 
@@ -691,6 +752,7 @@ export class GameSession {
         rounds: state.hdr[Hdr.ROUND] as number,
         plan: this.plan.slice(),
         teams: this.options.party?.teams ?? null,
+        stats: this.seatStats.map((s) => ({ ...s })),
       });
     }
   }

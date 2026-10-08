@@ -34,6 +34,7 @@ import {
   rleLength,
   stateHash,
   type ArenaDef,
+  type Rules,
 } from '../core';
 import { webGamepads } from '../input/dom';
 import { GamepadSeats } from '../input/gamepad';
@@ -46,8 +47,10 @@ import {
   type CalendarDate,
   type Clock,
 } from '../platform/clock';
+import { deviceLanguage, setLanguage } from '../i18n';
 import { mockEntitlements, type MockEntitlements } from '../platform/entitlement';
 import { onAppVisibility } from '../platform/lifecycle';
+import { platformBack, type BackPort } from '../platform/back';
 import { webHaptics, type HapticKind, type HapticsPort } from '../platform/haptics';
 import { prefersReducedMotion } from '../platform/lifecycle';
 import { webStore } from '../platform/storage';
@@ -72,6 +75,7 @@ import { DailyStore, betterRecord, type DailyView } from './dailyStore';
 import { botPlay } from './solver';
 import { TIP_IDS, TipsStore, type TipId } from './tips';
 import type { HudModel } from './hud';
+import type { ControlPrefs } from './modes';
 import type { LobbySeatView } from './lobby';
 import { MAX_CORNER_BOTS, type GameMode } from './modes';
 import { DEFAULT_PARTY, pickArena, resolveParty, type PartyConfig } from './party';
@@ -135,6 +139,8 @@ export interface ShellOptions {
   readonly reducedMotion: boolean | null;
   /** Daily challenge date override (`?date`). */
   readonly date: CalendarDate | null;
+  /** `?lang=en|hu` was given: it wins over the language setting for this session. */
+  readonly langForced?: boolean;
   readonly clock?: Clock;
 }
 
@@ -146,6 +152,7 @@ export interface ShellDeps {
   readonly daily?: DailyStore;
   readonly tips?: TipsStore;
   readonly gamepads?: GamepadSeats;
+  readonly back?: BackPort;
   readonly partyStore?: PartyStore;
   readonly audio?: GameAudio;
   readonly haptics?: HapticsPort;
@@ -187,6 +194,8 @@ export interface GameTestHook {
   dailySolution(): number[];
   /** Today's daily progress: official attempt, best, streak. */
   dailyView(): DailyView;
+  /** System back action (Android back button): true when the game used it. */
+  back(): boolean;
   /** Seats a game controller currently steers. */
   gamepadSeats(): number[];
   /** Tutorial: starts it (at step `stage`, 0-based). */
@@ -276,6 +285,7 @@ export function parseShellOptions(search: string): ShellOptions {
     speed: GAME_SPEEDS.find((v) => String(v) === q.get('speed')) ?? null,
     reducedMotion: q.get('motion') === 'reduced' ? true : q.get('motion') === 'full' ? false : null,
     date: parseDate(q.get('date')),
+    langForced: q.get('lang') === 'en' || q.get('lang') === 'hu',
   };
 }
 
@@ -302,6 +312,8 @@ export class GameShell {
   readonly tips: TipsStore;
   /** Game controllers; their seat claims last across matches (T5.5). */
   readonly gamepads: GamepadSeats;
+  /** System back action (Android back button; Escape on desktop) – the UI installs the handler. */
+  readonly back: BackPort;
   private dailyCache: { day: number; promise: Promise<DailyChallenge> } | null = null;
   private dailyReady: DailyChallenge | null = null;
   private readonly partyStore: PartyStore;
@@ -335,6 +347,7 @@ export class GameShell {
     this.daily = deps.daily ?? new DailyStore(webStore());
     this.tips = deps.tips ?? new TipsStore(webStore());
     this.gamepads = deps.gamepads ?? new GamepadSeats(webGamepads());
+    this.back = deps.back ?? platformBack();
     this.partyStore = deps.partyStore ?? new PartyStore(webStore());
     this.settings =
       deps.settings ?? new SettingsStore(webStore(), defaultSettings(prefersReducedMotion()));
@@ -353,6 +366,8 @@ export class GameShell {
     this.governor = new QualityGovernor((q) => this.onQuality(q));
     const s = this.settings.get();
     this.audio.setVolumes(s.musicVolume, s.sfxVolume);
+    this.applyPresentation(s);
+    this.lastLanguage = s.language;
     this.audio.engine.attachUnlock();
     this.settings.subscribe((next) => this.applySettings(next));
     // Nothing moves on its own under a manual clock: no frame loop at all, sessions present
@@ -393,7 +408,34 @@ export class GameShell {
     };
   }
 
+  /** Language and larger text (T6.1); a `?lang` query keeps its language for the session. */
+  private applyPresentation(s: Settings): void {
+    if (!this.options.langForced || this.langTouched) {
+      setLanguage(s.language === 'auto' ? deviceLanguage() : s.language);
+    }
+    globalThis.document?.documentElement.classList.toggle('large-text', s.largeText);
+  }
+
+  /** The language setting was changed in this session (it then wins over `?lang`). */
+  private langTouched = false;
+  private lastLanguage: Settings['language'] | null = null;
+
+  /** Touch control preferences for new sessions. */
+  private controlPrefs(): ControlPrefs {
+    const s = this.settings.get();
+    return { scheme: s.scheme, leftHanded: s.leftHanded, zoneScale: s.zoneScale };
+  }
+
+  /** Rule options for party, Quick Match and the first-playable modes (never challenges). */
+  private ruleTweaks(): Pick<Rules, 'selfDamage' | 'cornerAssist'> {
+    const s = this.settings.get();
+    return { selfDamage: !s.friendly, cornerAssist: s.cornerAssist };
+  }
+
   private applySettings(s: Settings): void {
+    if (this.lastLanguage !== null && s.language !== this.lastLanguage) this.langTouched = true;
+    this.lastLanguage = s.language;
+    this.applyPresentation(s);
     this.audio.setVolumes(s.musicVolume, s.sfxVolume);
     const session = this.session;
     if (!session) return;
@@ -491,6 +533,8 @@ export class GameShell {
           speed: speedFactor(this.settings.get().gameSpeed),
           feel: this.sessionFeel(mode),
           gamepads: this.gamepads,
+          controls: this.controlPrefs(),
+          ruleTweaks: this.ruleTweaks(),
         },
         this.matchCallbacks(),
       ),
@@ -504,9 +548,11 @@ export class GameShell {
     fx: FxSettings;
     speed: number;
     gamepads: GamepadSeats;
+    controls: ControlPrefs;
   } {
     return {
       gamepads: this.gamepads,
+      controls: this.controlPrefs(),
       manualClock: this.options.manualClock,
       ...(this.options.manualClock ? { pointerClock: () => this.pointerClock.now } : {}),
       fx: this.fxSettings(),
@@ -547,6 +593,7 @@ export class GameShell {
         this.controlTex,
         {
           mode: 'party',
+          ruleTweaks: this.ruleTweaks(),
           seed,
           arena,
           winsToMatch: party.rules.winsToMatch,
@@ -590,6 +637,7 @@ export class GameShell {
         this.controlTex,
         {
           mode: 'party',
+          ruleTweaks: this.ruleTweaks(),
           seed,
           arena,
           winsToMatch: party.rules.winsToMatch,
@@ -985,6 +1033,7 @@ export class GameShell {
       startDaily: () => this.startDaily(),
       startTutorial: (stage) => this.startTutorial(stage ?? 0),
       gamepadSeats: () => this.gamepads.assignedSeats(),
+      back: () => this.back.trigger(),
       tips: () => ({
         tutorialDone: this.tips.tutorialDone,
         shown: TIP_IDS.filter((id) => this.tips.seen(id)),

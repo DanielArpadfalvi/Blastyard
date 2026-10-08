@@ -132,6 +132,11 @@ export const RuleFlag = {
   TEAMS: 8,
   /** Warm-up sandbox (party lobby): flames and monsters never eliminate anybody. */
   HARMLESS: 16,
+  /** Friendly rule (PLAN §1.12): a player's own flames never hurt them. */
+  NO_SELF_DAMAGE: 32,
+  /** Corner-assist strength: weaker / stronger than the default window (neither = default). */
+  ASSIST_LOW: 64,
+  ASSIST_HIGH: 128,
 } as const;
 
 /** Challenge monster kinds (`monKind`). 0 = no monster in the slot. */

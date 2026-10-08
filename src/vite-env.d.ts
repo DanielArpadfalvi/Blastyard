@@ -5,6 +5,9 @@ interface ImportMetaEnv {
   readonly VITE_SPIKE?: string;
 }
 
+/** package.json version (vite `define`). */
+declare const __APP_VERSION__: string;
+
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }

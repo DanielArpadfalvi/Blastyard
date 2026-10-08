@@ -21,7 +21,12 @@
 import { DEFAULT_KEY_BINDINGS, type KeyBinding } from '../input/keyboard';
 import type { Rect } from '../input/geometry';
 import { localSize, zoneScreenPoint, type SeatOrientation, type Vec } from '../input/rotation';
-import type { ZoneSpec } from '../input/zones';
+import {
+  DEFAULT_TOUCH_PARAMS,
+  type ControlScheme,
+  type TouchParams,
+  type ZoneSpec,
+} from '../input/zones';
 import type { ArenaLayout } from '../render/layout';
 import { BotLevel, MAX_SEATS, type ArenaDef, type MatchSetup } from '../core';
 
@@ -187,6 +192,35 @@ function stripArea(layout: ArenaLayout, side: 'left' | 'right'): Rect {
   return { x, y, w: Math.max(0, strip.x + strip.w - edge - x), h };
 }
 
+/**
+ * Player control preferences (settings, T6.1) for the solo and face-off zones; the four-corner
+ * zones are always one-finger. `zoneScale` (percent) sizes the bomb button and the stick follow
+ * radius ({@link touchParamsFor}).
+ */
+export interface ControlPrefs {
+  readonly scheme: ControlScheme;
+  readonly leftHanded: boolean;
+  readonly zoneScale: number;
+}
+
+export const DEFAULT_CONTROL_PREFS: ControlPrefs = {
+  scheme: 'twoThumb',
+  leftHanded: false,
+  zoneScale: 100,
+};
+
+/** Touch parameters for the preferences (bomb button and stick follow radius scaled). */
+export function touchParamsFor(prefs: ControlPrefs): TouchParams {
+  const k = Math.min(1.2, Math.max(0.8, prefs.zoneScale / 100));
+  const d = DEFAULT_TOUCH_PARAMS;
+  return {
+    ...d,
+    bombVisibleDiameter: Math.round(d.bombVisibleDiameter * k),
+    bombHitDiameter: Math.round(d.bombHitDiameter * k),
+    stick: { ...d.stick, followRadius: Math.round(d.stick.followRadius * k) },
+  };
+}
+
 /** Splits a strip area into its top and bottom corner zones, `gutter` apart. */
 export function splitCorners(area: Rect, gutter: number): { top: Rect; bottom: Rect } {
   const h = Math.max(0, (area.h - gutter) / 2);
@@ -213,6 +247,7 @@ export function zonesForPlan(
   kind: LayoutKind,
   layout: ArenaLayout,
   plan: readonly SeatPlan[],
+  prefs: ControlPrefs = DEFAULT_CONTROL_PREFS,
 ): ZonePlan {
   const left = stripArea(layout, 'left');
   const right = stripArea(layout, 'right');
@@ -227,12 +262,27 @@ export function zonesForPlan(
       0,
       plan.findIndex((p) => p.kind === 'human'),
     );
+    // Left-handed: the stick starts in the right strip, the bomb button sits in the left one.
     const rect: Rect = { x: left.x, y: left.y, w: right.x + right.w - left.x, h: left.h };
-    const bombCenter = { x: right.x + right.w / 2, y: right.y + right.h * 0.68 };
+    const [stickStrip, bombStrip] = prefs.leftHanded ? [right, left] : [left, right];
+    const bombCenter = { x: bombStrip.x + bombStrip.w / 2, y: bombStrip.y + bombStrip.h * 0.68 };
+    const stickHint =
+      prefs.scheme === 'oneFinger'
+        ? { x: rect.x + rect.w / 2, y: rect.y + rect.h * 0.62 }
+        : { x: stickStrip.x + stickStrip.w / 2, y: stickStrip.y + stickStrip.h * 0.62 };
     return {
-      zones: [{ seat, rect, orientation: 0, scheme: 'twoThumb', bombCenter }],
+      zones: [
+        {
+          seat,
+          rect,
+          orientation: 0,
+          scheme: prefs.scheme,
+          bombCenter,
+          ...(prefs.leftHanded ? { leftHanded: true } : {}),
+        },
+      ],
       arena,
-      stickHints: [{ x: left.x + left.w / 2, y: left.y + left.h * 0.62 }],
+      stickHints: [stickHint],
       left,
       right,
     };
@@ -260,16 +310,21 @@ export function zonesForPlan(
     return { zones, arena, stickHints, left, right };
   }
   const zones: ZoneSpec[] = [];
-  if (human(0)) {
-    zones.push({ seat: 0, rect: left, orientation: orientationOf(0), scheme: 'twoThumb' });
-  }
-  if (human(1)) {
-    zones.push({ seat: 1, rect: right, orientation: orientationOf(1), scheme: 'twoThumb' });
-  }
-  // Stick area: the seat-left 55 % of the zone; hint at its middle.
+  const faceZone = (seat: number, rect: Rect): ZoneSpec => ({
+    seat,
+    rect,
+    orientation: orientationOf(seat),
+    scheme: prefs.scheme,
+    ...(prefs.leftHanded ? { leftHanded: true } : {}),
+  });
+  if (human(0)) zones.push(faceZone(0, left));
+  if (human(1)) zones.push(faceZone(1, right));
+  // Stick area: the seat-left 55 % of the zone (seat-right when left-handed, the whole zone with
+  // one finger); hint at its middle.
   const stickHints = zones.map((z) => {
     const local = localSize(z.rect, z.orientation);
-    return zoneScreenPoint(z.rect, z.orientation, local.w * 0.275, local.h * 0.5);
+    const x = prefs.scheme === 'oneFinger' ? 0.5 : prefs.leftHanded ? 0.725 : 0.275;
+    return zoneScreenPoint(z.rect, z.orientation, local.w * x, local.h * 0.5);
   });
   return { zones, arena, stickHints, left, right };
 }
