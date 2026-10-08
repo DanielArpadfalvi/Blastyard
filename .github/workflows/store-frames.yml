@@ -1,0 +1,39 @@
+# Store screenshots (T9.2): every scene at every store size, EN + HU, as an artifact.
+# Run by hand (Actions → Store frames → Run workflow) before a store submission.
+name: Store frames
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frames:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The apt step behind --with-deps sometimes hangs on the runner: cap each attempt, retry.
+      - name: Install Playwright Chromium
+        timeout-minutes: 20
+        run: |
+          for i in 1 2 3; do
+            timeout 300 npx playwright install --with-deps chromium && exit 0
+            echo "::warning::playwright install attempt $i failed or timed out, retrying"
+            sleep 10
+          done
+          exit 1
+      - run: npm run build
+      # The same build renders the same frame twice, byte for byte.
+      - run: npm run store:frames -- --verify
+      - run: npm run store:frames
+      - uses: actions/upload-artifact@v5
+        with:
+          name: store-frames
+          path: store-frames

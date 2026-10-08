@@ -23,7 +23,8 @@
     "capacitor:sync:after": "npm run native:config",
     "assets": "node scripts/run-ts.mjs scripts/assets.ts",
     "site": "node scripts/run-ts.mjs scripts/site.ts",
-    "listing": "node scripts/run-ts.mjs scripts/storeListing.ts"
+    "listing": "node scripts/run-ts.mjs scripts/storeListing.ts",
+    "store:frames": "node scripts/run-ts.mjs scripts/storeFrames.ts"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",

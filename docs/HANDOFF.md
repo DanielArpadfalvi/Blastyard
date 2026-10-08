@@ -3,7 +3,7 @@
 Current state, next steps and local setup for the next session (human or agent). Updated after
 every finished task (rule in `CLAUDE.md`).
 
-## Last update: 2026-10-08 – M8 T8.1 purchases done; M9 T9.1 listing + T9.3 site done; APK → Google Drive
+## Last update: 2026-10-08 – M8 T8.1 purchases done; M9 T9.1 listing, T9.2 screenshots, T9.3 site done; APK → Google Drive
 
 ### Done in the latest session (branch `claude/relaxed-allen-18zaek`)
 - **CI fixes** – the touch tester no longer renders the menu backdrop under itself
@@ -18,6 +18,8 @@ every finished task (rule in `CLAUDE.md`).
   Supporter items `goldcrown` + `confetti`. Owner setup: `docs/PURCHASES.md`.
 - **T9.1 store listing** – `scripts/storeListing.ts` → `npm run listing` → `docs/store-listing.md`;
   `docs/store-privacy-answers.md`; trademark guard in `tests/unit/storeListing.test.ts`.
+- **T9.2 store screenshots** – `npm run build && npm run store:frames` (50 framed PNGs,
+  EN/HU × 5 sizes × 5 scenes, `--verify` for byte equality); manual workflow `store-frames.yml`.
 - **T9.3 site** – `scripts/site.ts` / `siteContent.ts` (`npm run site`), built by `pages.yml`
   into `/Blastyard/site/`; app links per language (`siteUrl`).
 - Earlier in this branch: T5.3–T5.5, M6, M7 (see `docs/TASKS.md` "Done:" notes).
@@ -85,9 +87,7 @@ every finished task (rule in `CLAUDE.md`).
   pre-release once on main) on a device for the touch re-check; try an iOS build on a Mac.
 
 ### Next step
-- **M9 – T9.2 screenshot generator** (`scripts/store-frames.ts`: deterministic scenes – 4-corner
-  party, explosion chain, challenge map, lobby, customization – at the store sizes, EN/HU
-  captions), then T9.4 (QA & balance: bot-league + match-length sims, `docs/QA.md`; device checks
+- **M9 – T9.4** (QA & balance: bot-league + match-length sims, `docs/QA.md`; device checks
   are owner tasks) and T9.5 (versions aligned, hidden sourcemaps, iOS `PrivacyInfo.xcprivacy`,
   signed release workflows, `docs/RELEASE.md`).
 - Gamepad polish (later): menu navigation with a controller, Start = pause.
