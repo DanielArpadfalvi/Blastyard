@@ -14,6 +14,7 @@ import { Hud } from './Hud';
 import { PartySetup } from './PartySetup';
 import { PauseOverlay } from './PauseOverlay';
 import { Paywall, PlusCard } from './Paywall';
+import { InviteToast, LobbyScreen, OnlineScreen } from './Online';
 import { ResultScreen } from './ResultScreen';
 import { SettingsPanel } from './SettingsPanel';
 import { StartScreen } from './StartScreen';
@@ -28,7 +29,7 @@ export interface AppProps {
 }
 
 /** What the menu backdrop shows next to the start screen. */
-type MenuView = 'start' | 'party' | 'challenges' | 'daily' | 'customize';
+type MenuView = 'start' | 'party' | 'challenges' | 'daily' | 'customize' | 'online';
 
 /** Where "leave" from a paused match goes back to. */
 function leaveView(snapshot: SessionSnapshot | null): MenuView {
@@ -64,10 +65,21 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
     const offProgress = shell.progress.subscribe(bump);
     const offDaily = shell.daily.subscribe(bump);
     const offPlus = shell.entitlements.subscribe(bump);
+    // Online: entering / leaving a lobby switches the menu screen.
+    let phase = shell.online.get().view.phase;
+    const offOnline = shell.online.subscribe((snap) => {
+      if (snap.view.phase === phase) return;
+      if (phase === 'lobby' || phase === 'joining') {
+        if (snap.view.phase === 'idle') setMenuView('online');
+      }
+      phase = snap.view.phase;
+      bump();
+    });
     return () => {
       offProgress();
       offDaily();
       offPlus();
+      offOnline();
     };
   }, [shell]);
 
@@ -75,6 +87,9 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
   const result = state?.result;
   const challengeResult = state?.challengeResult;
   const paused = state?.snapshot?.paused === true;
+  const onlinePhase = shell?.online.get().view.phase ?? 'idle';
+  const inLobby = onlinePhase === 'lobby' || onlinePhase === 'joining';
+  const onlineMatch = state?.snapshot?.mode === 'online' || result?.mode === 'online';
   const toMenu = (view: MenuView = 'start'): void => {
     shell?.showMenu();
     setMenuView(view);
@@ -97,6 +112,16 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
     }
     if (settings) {
       setSettings(false);
+      return true;
+    }
+    if (onlineMatch && (screen === 'playing' || screen === 'result')) {
+      // Leaving an online match leaves its lobby too (the others play on without us).
+      shell.online.leave();
+      toMenu('online');
+      return true;
+    }
+    if (screen === 'menu' && inLobby) {
+      shell.online.leave();
       return true;
     }
     switch (screen) {
@@ -147,10 +172,18 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
 
   return (
     <div class="overlay" data-testid="ui-root">
-      {shell && menu && menuView === 'start' && (
+      {shell && menu && inLobby && <LobbyScreen client={shell.online} />}
+      {shell && menu && !inLobby && menuView === 'online' && (
+        <OnlineScreen client={shell.online} onBack={() => setMenuView('start')} />
+      )}
+      {shell && menu && !inLobby && menuView !== 'online' && (
+        <InviteToast client={shell.online} onJoin={() => setMenuView('online')} />
+      )}
+      {shell && menu && !inLobby && menuView === 'start' && (
         <StartScreen
           onStart={(m, bots) => shell.start(m, bots)}
           onParty={() => setMenuView('party')}
+          onOnline={() => setMenuView('online')}
           onQuick={() => shell.startQuick()}
           onChallenges={() => setMenuView('challenges')}
           onDaily={() => setMenuView('daily')}
@@ -194,6 +227,9 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
           }}
           onBack={() => setMenuView('start')}
           onPlus={() => setPaywall(true)}
+          {...(shell.online.available
+            ? { onDeleteOnline: () => shell.online.deleteProfile() }
+            : {})}
         />
       )}
       {shell && menu && menuView === 'daily' && (
@@ -270,13 +306,28 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
           onLeave={() => toMenu(leaveView(state?.snapshot ?? null))}
         />
       )}
-      {shell && screen === 'result' && result && result.mode !== 'attract' && (
-        <ResultScreen result={result} onAgain={() => shell.again()} onMenu={() => toMenu()}>
-          {state?.plusHint && !plusCardClosed && !shell.hasPlus() && (
-            <PlusCard onOpen={() => setPaywall(true)} onDismiss={() => setPlusCardClosed(true)} />
-          )}
-        </ResultScreen>
+      {shell && screen === 'result' && result && result.mode === 'online' && (
+        <ResultScreen
+          result={result}
+          againLabel={t('onlineBackToLobby')}
+          onAgain={() => shell.backToOnlineLobby()}
+          onMenu={() => {
+            shell.online.leave();
+            toMenu('online');
+          }}
+        />
       )}
+      {shell &&
+        screen === 'result' &&
+        result &&
+        result.mode !== 'attract' &&
+        result.mode !== 'online' && (
+          <ResultScreen result={result} onAgain={() => shell.again()} onMenu={() => toMenu()}>
+            {state?.plusHint && !plusCardClosed && !shell.hasPlus() && (
+              <PlusCard onOpen={() => setPaywall(true)} onDismiss={() => setPlusCardClosed(true)} />
+            )}
+          </ResultScreen>
+        )}
       {shell && screen === 'challengeResult' && challengeResult && (
         <ChallengeResultScreen
           result={challengeResult}

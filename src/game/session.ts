@@ -68,7 +68,7 @@ import type { DailyOutcome } from './dailyStore';
 import { HapticsDirector } from './haptics';
 import { HudSignature, RESULT_DELAY_TICKS, hudModel, type HudModel } from './hud';
 import { LobbyTracker, type LobbySeatView } from './lobby';
-import { MatchRunner } from './matchRunner';
+import { MatchRunner, type Stepper } from './matchRunner';
 import {
   DEFAULT_CONTROL_PREFS,
   keyBindingsFor,
@@ -121,6 +121,15 @@ export interface SessionOptions {
   readonly controls?: ControlPrefs;
   /** Player rule options (friendly rule, corner assist) for party / quick / first-playable modes. */
   readonly ruleTweaks?: Pick<Rules, 'selfDamage' | 'cornerAssist'>;
+  /**
+   * `online` mode: the agreed match setup, this phone's seat plan (the local player `human`,
+   * remote players and bots listed like bots, with names) and the netcode stepper.
+   */
+  readonly online?: {
+    readonly setup: MatchSetup;
+    readonly plan: readonly SeatPlan[];
+    readonly stepper: Stepper;
+  };
 }
 
 export interface SessionFeel {
@@ -286,6 +295,7 @@ export class GameSession {
     const { mode } = options;
     if (mode === 'party' && !options.party) throw new Error('party mode needs a party plan');
     if (mode === 'challenge' && !options.challenge) throw new Error('challenge mode needs a level');
+    if (mode === 'online' && !options.online) throw new Error('online mode needs a match');
     this.zones = new TouchZones(touchParamsFor(options.controls ?? DEFAULT_CONTROL_PREFS));
     this.plan = this.initialPlan();
     this.kind = options.party?.layout ?? layoutKindOf(mode);
@@ -347,14 +357,16 @@ export class GameSession {
   }
 
   private initialPlan(): SeatPlan[] {
-    const { mode, party, challenge } = this.options;
+    const { mode, party, challenge, online } = this.options;
+    if (online) return online.plan.map((p) => ({ ...p }));
     if (party) return party.seats.map((p) => ({ ...p }));
     if (challenge) return stagePlan(challenge.level.stages[challenge.startStage ?? 0]);
     return seatPlan(mode, this.options.bots);
   }
 
   private initialState(): SimState {
-    const { mode, party, challenge, lobby, seed, arena } = this.options;
+    const { mode, party, challenge, lobby, seed, arena, online } = this.options;
+    if (online) return createState(online.setup);
     if (party) {
       return createState(
         this.tweak(partyMatchSetup(party, seed, lobby ? lobbyArena(arena) : arena, lobby === true)),
@@ -396,6 +408,7 @@ export class GameSession {
       this.view,
       this.options.speed ?? 1,
     );
+    if (this.options.online) runner.setStepper(this.options.online.stepper);
     runner.onEvents((events) => this.onEvents(events));
     runner.onTick((st) => {
       this.audio?.onTick(st);
@@ -436,6 +449,8 @@ export class GameSession {
 
   /** Pauses / resumes the match (clock and input); a paused match keeps its frame on screen. */
   setPaused(paused: boolean): void {
+    // Online matches cannot pause: the other phones keep playing.
+    if (this.options.mode === 'online') return;
     if (paused === this.userPaused) return;
     this.userPaused = paused;
     this.runnerRef.setPaused(paused || this.options.manualClock);

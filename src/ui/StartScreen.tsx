@@ -27,6 +27,8 @@ export interface StartScreenProps {
   /** Device-test tools (web preview / `?spike`): touch tester and the four-corner prototype. */
   spike?: boolean;
   onTouchTest?: () => void;
+  /** Online private lobbies. */
+  onOnline?: () => void;
   /** Initial bot seats for the four-corner prototype. */
   cornerBots?: number;
   onSettings?: () => void;
@@ -49,6 +51,7 @@ export function StartScreen({
   onQuickLevel,
   spike = false,
   onTouchTest,
+  onOnline,
   cornerBots = 0,
   onSettings,
   onLanguage,
@@ -91,6 +94,17 @@ export function StartScreen({
             >
               <span class="mode-name">{t('modeParty')}</span>
               <span class="mode-hint">{t('modePartyHint')}</span>
+            </button>
+          )}
+          {onOnline && (
+            <button
+              type="button"
+              class="mode-button tile"
+              data-testid="start-online"
+              onClick={onOnline}
+            >
+              <span class="mode-name">{t('modeOnline')}</span>
+              <span class="mode-hint">{t('modeOnlineHint')}</span>
             </button>
           )}
           {onQuick && (

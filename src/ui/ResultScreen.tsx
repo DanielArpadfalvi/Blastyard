@@ -13,6 +13,8 @@ export function ResultScreen(props: {
   result: MatchResult;
   onAgain: () => void;
   onMenu: () => void;
+  /** Text of the "again" button (online: back to the lobby). */
+  againLabel?: string;
   /** Shown under the buttons (the one-off Blastyard+ card). */
   children?: ComponentChildren;
 }) {
@@ -79,7 +81,7 @@ export function ResultScreen(props: {
             data-testid="play-again"
             onClick={onAgain}
           >
-            <span class="mode-name">{t('playAgain')}</span>
+            <span class="mode-name">{props.againLabel ?? t('playAgain')}</span>
           </button>
           <button
             type="button"

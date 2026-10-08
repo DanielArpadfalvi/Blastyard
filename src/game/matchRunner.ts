@@ -19,6 +19,22 @@ export interface MatchView {
   render(state: ReadonlySimState, history: TickHistory, alpha: number): void;
 }
 
+/**
+ * Advances the state by one tick with `inputs` and returns its events, or `null` when the tick
+ * could not be simulated yet (online: waiting for a remote player). `capture` must run right
+ * before the state moves on (render interpolation). Default: plain `step`.
+ */
+export type Stepper = (
+  state: SimState,
+  inputs: Uint8Array,
+  capture: () => void,
+) => readonly SimEvent[] | null;
+
+const plainStep: Stepper = (state, inputs, capture) => {
+  capture();
+  return step(state, inputs);
+};
+
 export const idleInputs: InputProvider = (_state, out) => {
   out.fill(0);
 };
@@ -30,6 +46,7 @@ export class MatchRunner {
   private paused = false;
   private eventListener: ((events: readonly SimEvent[]) => void) | undefined;
   private tickListener: ((state: ReadonlySimState) => void) | undefined;
+  private stepper: Stepper = plainStep;
 
   constructor(
     readonly state: SimState,
@@ -43,6 +60,11 @@ export class MatchRunner {
 
   setInputProvider(provider: InputProvider): void {
     this.provider = provider;
+  }
+
+  /** Replaces how a tick is simulated (online netcode); `null` restores plain `step`. */
+  setStepper(stepper: Stepper | null): void {
+    this.stepper = stepper ?? plainStep;
   }
 
   onEvents(listener: ((events: readonly SimEvent[]) => void) | undefined): void {
@@ -68,8 +90,8 @@ export class MatchRunner {
   stepOnce(): void {
     this.inputs.fill(0);
     this.provider(this.state, this.inputs);
-    this.history.capture(this.state);
-    const events = step(this.state, this.inputs);
+    const events = this.stepper(this.state, this.inputs, () => this.history.capture(this.state));
+    if (events === null) return;
     if (events.length > 0) this.eventListener?.(events);
     this.tickListener?.(this.state);
   }

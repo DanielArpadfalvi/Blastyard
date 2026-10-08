@@ -33,6 +33,7 @@
     "@capacitor/ios": "^8.5.3",
     "@capacitor/screen-orientation": "^8.0.2",
     "@revenuecat/purchases-capacitor": "^13.7.2",
+    "@supabase/supabase-js": "^2.117.3",
     "pixi.js": "^8.22.0",
     "preact": "^11.0.0"
   },

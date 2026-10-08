@@ -119,8 +119,11 @@ export function SettingsPanel(props: {
   onBack: () => void;
   /** Open the Blastyard+ / Supporter page. */
   onPlus?: () => void;
+  /** Delete the online profile (only when online play is available). */
+  onDeleteOnline?: () => Promise<void>;
 }) {
-  const { store, entitlements, onTouchTest, onBack, onPlus } = props;
+  const { store, entitlements, onTouchTest, onBack, onPlus, onDeleteOnline } = props;
+  const [onlineDeleted, setOnlineDeleted] = useState(false);
   const [s, setS] = useState<Settings>(store.get());
   const [restore, setRestore] = useState<RestoreResult | 'busy' | null>(null);
   useEffect(() => store.subscribe(setS), [store]);
@@ -303,6 +306,24 @@ export function SettingsPanel(props: {
               </button>
             )}
           </div>
+          {onDeleteOnline && (
+            <div class="about-buttons">
+              <button
+                type="button"
+                class="bots-toggle"
+                data-testid="settings-delete-online"
+                disabled={onlineDeleted}
+                onClick={() => void onDeleteOnline().then(() => setOnlineDeleted(true))}
+              >
+                {t('settingsDeleteOnline')}
+              </button>
+              {onlineDeleted && (
+                <span class="setting-hint" role="status">
+                  {t('settingsDeleteOnlineDone')}
+                </span>
+              )}
+            </div>
+          )}
           {restore !== null && restore !== 'busy' && (
             <p class="setting-hint" role="status" data-testid="restore-status">
               {t(

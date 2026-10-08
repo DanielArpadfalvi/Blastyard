@@ -30,6 +30,8 @@ export const DATA_FACTS = {
   tracking: false,
   /** Sent to RevenueCat (purchase processing), not linked to the user's identity. */
   collected: ['Purchase history', 'Anonymous app user ID'],
+  /** Only when the player uses Online: stored by Supabase, deletable in Settings. */
+  online: ['Display name', 'Friend code', 'Friend list', 'Pending lobby invites (1 day)'],
 } as const;
 
 export const NAV: Record<SiteLang, Record<PageId, string>> = {
@@ -82,7 +84,13 @@ export const PAGES: Record<SiteLang, Record<PageId, PageText>> = {
         {
           h: 'What we do not do',
           p: [
-            '- no analytics or usage statistics\n- no advertising or ad identifiers\n- no crash-reporting SDKs\n- no sign-in, no account, no contacts, location, camera or microphone\n- no selling or sharing of data, no tracking across apps or websites',
+            '- no analytics or usage statistics\n- no advertising or ad identifiers\n- no crash-reporting SDKs\n- no e-mail or social sign-in; no contacts, location, camera or microphone\n- no selling or sharing of data, no tracking across apps or websites',
+          ],
+        },
+        {
+          h: 'Online play (optional)',
+          p: [
+            'Only if you open Online: the game creates an anonymous account on our online service (Supabase, servers in the EU) and stores your display name, your friend code, your friend list and lobby invites (removed after one day). Lobby and match messages only pass through the service; nothing about a match is stored. Settings → About → "Delete online profile" removes all of it. Supabase’s privacy policy: https://supabase.com/privacy',
           ],
         },
         {
@@ -200,7 +208,13 @@ export const PAGES: Record<SiteLang, Record<PageId, PageText>> = {
         {
           h: 'Amit nem csinálunk',
           p: [
-            '- nincs analitika vagy használati statisztika\n- nincs reklám és reklámazonosító\n- nincs hibajelentő SDK\n- nincs bejelentkezés, fiók, névjegy-, hely-, kamera- vagy mikrofonhasználat\n- nem adunk el és nem osztunk meg adatot, nem követünk alkalmazásokon vagy weboldalakon át',
+            '- nincs analitika vagy használati statisztika\n- nincs reklám és reklámazonosító\n- nincs hibajelentő SDK\n- nincs e-mailes vagy közösségi bejelentkezés; nincs névjegy-, hely-, kamera- vagy mikrofonhasználat\n- nem adunk el és nem osztunk meg adatot, nem követünk alkalmazásokon vagy weboldalakon át',
+          ],
+        },
+        {
+          h: 'Online játék (opcionális)',
+          p: [
+            'Csak ha megnyitod az Online módot: a játék névtelen fiókot hoz létre az online szolgáltatásunkban (Supabase, EU-s szerverek), és tárolja a megjelenített neved, a barátkódod, a barátlistád és a lobby-meghívásokat (egy nap után törlődnek). A lobby- és meccsüzenetek csak áthaladnak a szolgáltatáson; a meccsekről semmit nem tárolunk. A Beállítások → Névjegy → „Online profil törlése” mindezt eltávolítja. A Supabase adatvédelmi tájékoztatója: https://supabase.com/privacy',
           ],
         },
         {

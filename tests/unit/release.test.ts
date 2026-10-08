@@ -35,8 +35,11 @@ describe('release prep (T9.5)', () => {
     const types = [
       ...manifest.matchAll(/<string>NSPrivacyCollectedDataType(?!Purpose)(\w+)<\/string>/g),
     ].map((m) => m[1]);
-    expect(types).toEqual(['PurchaseHistory', 'UserID']);
-    expect(manifest).not.toMatch(/<key>NSPrivacyCollectedDataTypeLinked<\/key>\s*<true\/>/);
+    expect(types).toEqual(['PurchaseHistory', 'UserID', 'OtherUserContent']);
+    // Purchases are not linked; the optional online account is declared as linked.
+    expect(manifest).toMatch(
+      /PurchaseHistory<\/string>\s*<key>NSPrivacyCollectedDataTypeLinked<\/key>\s*<false\/>/,
+    );
     const pbx = read('ios/App/App.xcodeproj/project.pbxproj');
     expect(pbx).toContain('PrivacyInfo.xcprivacy in Resources */,');
   });

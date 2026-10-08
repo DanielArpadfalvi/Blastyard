@@ -41,6 +41,8 @@ jobs:
       - run: npx vite build
         env:
           VITE_REVENUECAT_IOS_KEY: ${{ secrets.VITE_REVENUECAT_IOS_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       # Also writes ios/app-id.xcconfig (bundle id, version, build) through the capacitor:sync:after hook.
       - run: npx cap sync ios
       - name: Show Xcode version

@@ -30,7 +30,8 @@ import {
 import type { ArenaLayout } from '../render/layout';
 import { BotLevel, MAX_SEATS, type ArenaDef, type MatchSetup } from '../core';
 
-export type GameMode = 'solo' | 'faceoff' | 'corners' | 'attract' | 'party' | 'challenge';
+export type GameMode =
+  'solo' | 'faceoff' | 'corners' | 'attract' | 'party' | 'challenge' | 'online';
 export type SeatKind = 'human' | 'bot' | 'off';
 
 /**
@@ -46,11 +47,15 @@ export interface SeatPlan {
   readonly orientation: SeatOrientation;
   /** Bot difficulty (`BotLevel` 1–4) of a bot seat; default Normal. */
   readonly botLevel?: number;
+  /** Online: the player's display name (remote seats; shown instead of "Player n"). */
+  readonly name?: string;
+  /** Online: played on another phone (no zone here; listed like a bot). */
+  readonly remote?: boolean;
 }
 
 /** The zone layout a fixed mode uses (`party` carries its own: see `PartyPlan.layout`). */
 export function layoutKindOf(mode: GameMode): LayoutKind {
-  if (mode === 'challenge') return 'solo';
+  if (mode === 'challenge' || mode === 'online') return 'solo';
   if (mode === 'party') return 'faceoff';
   return mode;
 }
@@ -110,6 +115,7 @@ export function seatPlan(mode: GameMode, bots = 0): SeatPlan[] {
       }));
     case 'party':
     case 'challenge':
+    case 'online':
       // Plans of these modes come from the party setup / the challenge stage (see `party.ts`).
       return [{ seat: 0, kind: 'human', orientation: 0 }, OFF(1), OFF(2), OFF(3)];
   }
@@ -143,7 +149,7 @@ export function matchSetupFor(mode: GameMode, options: MatchOptions): MatchSetup
  */
 export function keyBindingsFor(mode: GameMode, plan?: readonly SeatPlan[]): KeyBinding[] {
   if (mode === 'attract') return [];
-  if (mode === 'party' && plan) {
+  if ((mode === 'party' || mode === 'online') && plan) {
     // One key set per human seat (the first two); a lone human gets both sets.
     const humans = plan.filter((p) => p.kind === 'human').map((p) => p.seat);
     const [wasd, arrows] = DEFAULT_KEY_BINDINGS as [KeyBinding, KeyBinding];

@@ -39,6 +39,8 @@ jobs:
       - run: npx vite build
         env:
           VITE_REVENUECAT_ANDROID_KEY: ${{ secrets.VITE_REVENUECAT_ANDROID_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       - run: npx cap sync android
       - name: Build debug APK and release bundle (unsigned AAB)
         working-directory: android

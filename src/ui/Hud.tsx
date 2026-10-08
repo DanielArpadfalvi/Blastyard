@@ -463,7 +463,9 @@ export function Hud({
             onTurn={(seat) => onTurnSeat?.(seat)}
           />
         ))}
-      {!lobby && onPause && <PauseButton x={layout.width / 2} y={topY + 34} onPause={onPause} />}
+      {!lobby && onPause && snapshot.mode !== 'online' && (
+        <PauseButton x={layout.width / 2} y={topY + 34} onPause={onPause} />
+      )}
       {showBanners &&
         !lobby &&
         banners.map((b) => {

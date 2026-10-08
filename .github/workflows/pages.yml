@@ -47,6 +47,8 @@ jobs:
         env:
           VITE_BASE: /Blastyard/
           VITE_SPIKE: '1'
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       # Privacy / terms / support pages (T9.3) under /Blastyard/site/ – the app links there.
       - run: npm run site
         env:

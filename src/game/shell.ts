@@ -89,6 +89,12 @@ import { gestureBands, type ControlPrefs } from './modes';
 import type { LobbySeatView } from './lobby';
 import { MAX_CORNER_BOTS, type GameMode } from './modes';
 import { DEFAULT_PARTY, partyArena, pickArena, resolveParty, type PartyConfig } from './party';
+import { onlineMatchSetup } from '../net/lobby';
+import type { NetPort } from '../platform/net';
+import { platformNet } from '../platform/netSelect';
+import type { Stepper } from './matchRunner';
+import { NetMatch, onlinePlan, type NetMatchLink } from './netMatch';
+import { OnlineClient, type OnlineSnapshot } from './online';
 import { PartyStore, type StoredParty } from './partyStore';
 import {
   GameSession,
@@ -107,7 +113,7 @@ import {
   type Settings,
 } from './settings';
 
-export type PlayMode = Exclude<GameMode, 'attract' | 'party' | 'challenge'>;
+export type PlayMode = Exclude<GameMode, 'attract' | 'party' | 'challenge' | 'online'>;
 /**
  * `lobby`: the party's warm-up arena; `challengeResult`: a challenge was won or lost;
  * `tutorialDone`: the last tutorial step was won.
@@ -158,6 +164,8 @@ export interface ShellOptions {
   readonly reducedMotion: boolean | null;
   /** Daily challenge date override (`?date`). */
   readonly date: CalendarDate | null;
+  /** `?net=local`: online lobbies between the tabs of this browser (dev, e2e). */
+  readonly net?: 'local' | null;
   /** `?lang=en|hu` was given: it wins over the language setting for this session. */
   readonly langForced?: boolean;
   readonly clock?: Clock;
@@ -171,6 +179,7 @@ export interface ShellDeps {
   readonly daily?: DailyStore;
   readonly tips?: TipsStore;
   readonly gamepads?: GamepadSeats;
+  readonly net?: NetPort;
   readonly back?: BackPort;
   readonly system?: SystemPort & { state(): SystemState };
   readonly save?: KeyValueStore;
@@ -213,6 +222,15 @@ export interface GameTestHook {
   completePending(): void;
   hasSupporter(): boolean;
   hasPlus(): boolean;
+  /** Online match: simulated / confirmed tick, desync flag, this phone's seat, lobby phase. */
+  net(): {
+    tick: number;
+    confirmed: number;
+    desynced: boolean;
+    matched: number;
+    seat: number;
+    phase: string;
+  };
   /** Id of the arena the running session plays on. */
   arena(): string;
   /** Starts challenge level `id` directly (as the map's Play button does). */
@@ -324,6 +342,7 @@ export function parseShellOptions(search: string): ShellOptions {
     speed: GAME_SPEEDS.find((v) => String(v) === q.get('speed')) ?? null,
     reducedMotion: q.get('motion') === 'reduced' ? true : q.get('motion') === 'full' ? false : null,
     date: parseDate(q.get('date')),
+    net: q.get('net') === 'local' ? 'local' : null,
     langForced: q.get('lang') === 'en' || q.get('lang') === 'hu',
   };
 }
@@ -356,6 +375,10 @@ export class GameShell {
   private readonly thumbs = new Map<string, Promise<string>>();
   /** Game controllers; their seat claims last across matches (T5.5). */
   readonly gamepads: GamepadSeats;
+  /** Online private lobbies (friends, invites, lobby, match start). */
+  readonly online: OnlineClient;
+  private netMatch: NetMatch | null = null;
+  private onlineRound = 0;
   /** System back action (Android back button; Escape on desktop) – the UI installs the handler. */
   readonly back: BackPort;
   /** Keep-awake, orientation lock and gesture exclusion while a lobby / match is up (T7.1). */
@@ -407,6 +430,8 @@ export class GameShell {
     this.stats = deps.stats ?? new StatsStore(save);
     this.looks = deps.looks ?? new LooksStore(save);
     this.gamepads = deps.gamepads ?? new GamepadSeats(webGamepads());
+    this.online = new OnlineClient(deps.net ?? platformNet(options.net ?? null));
+    this.online.subscribe((snap) => this.onOnline(snap));
     this.back = deps.back ?? platformBack();
     this.system = deps.system ?? platformSystem();
     this.partyStore = deps.partyStore ?? new PartyStore(save);
@@ -1040,6 +1065,94 @@ export class GameShell {
     if (this.state.screen === 'playing') this.setPaused(true);
   }
 
+  /** Online: the lobby moved on – start the agreed match, or leave a match that ended. */
+  private onOnline(snap: OnlineSnapshot): void {
+    const v = snap.view;
+    if (v.phase === 'playing' && v.start.round !== this.onlineRound) {
+      this.onlineRound = v.start.round;
+      this.startOnlineMatch();
+    } else if (v.phase !== 'playing' && this.netMatch) {
+      this.endOnlineMatch();
+      if (this.state.screen === 'playing' || this.state.screen === 'result') this.showMenu();
+    }
+  }
+
+  /** Online: plays the match the lobby agreed on, this phone's seat with its touch controls. */
+  private startOnlineMatch(): void {
+    const snap = this.online.get();
+    const v = snap.view;
+    if (v.phase !== 'playing') return;
+    const localSeat = this.online.localSeat();
+    if (localSeat < 0) return;
+    this.endOnlineMatch();
+    const setup = onlineMatchSetup(v.start);
+    const names = new Map(v.lobby.members.map((m) => [m.id, m.name]));
+    const plan = onlinePlan(v.start, localSeat, names);
+    // The session creates the state; the netcode drives it through the stepper.
+    let net: NetMatch | null = null;
+    const stepper: Stepper = (state, inputs, capture) => {
+      if (!net) {
+        net = new NetMatch(state, v.start, localSeat, this.onlineLink(), {
+          onDesync: () => this.online.reportDesync(),
+        });
+        this.netMatch = net;
+      }
+      return net.stepper(state, inputs, capture);
+    };
+    this.replaceSession(
+      new GameSession(
+        this.app,
+        this.arenaTex,
+        this.controlTex,
+        {
+          mode: 'online',
+          seed: setup.seed,
+          arena: setup.arena,
+          winsToMatch: v.start.winsToMatch,
+          online: { setup, plan, stepper },
+          ...this.commonOptions(),
+          // Every phone runs in real time at the same speed.
+          speed: 1,
+          feel: this.sessionFeel('online', 1),
+        },
+        {
+          onSnapshot: (snapshot) => this.set({ snapshot }),
+          onMatchOver: (result) => {
+            this.session?.disableInput();
+            const arena = this.session?.options.arena.id;
+            if (arena) this.stats.recordMatch(result, arena);
+            this.toResult(result);
+          },
+        },
+      ),
+    );
+    this.toPlaying();
+  }
+
+  private onlineLink(): NetMatchLink {
+    const online = this.online;
+    return {
+      get isHost() {
+        return online.isHost;
+      },
+      send: (msg) => online.send(msg),
+      onMatchMessage: (fn) => online.onMatchMessage(fn),
+      silentMembers: () => online.silentMembers(),
+    };
+  }
+
+  private endOnlineMatch(): void {
+    this.netMatch?.dispose();
+    this.netMatch = null;
+  }
+
+  /** Online: from the result (or a running match) back to the lobby screen. */
+  backToOnlineLobby(): void {
+    this.endOnlineMatch();
+    this.online.backToLobby();
+    this.showMenu();
+  }
+
   /**
    * Four bots play a full match on the playing screen at full frame rate, with sound (perf
    * runs; a future "watch the bots" option).
@@ -1197,6 +1310,14 @@ export class GameShell {
       completePending: () => this.mockStore()?.completePending(),
       hasSupporter: () => this.entitlements.hasSupporter(),
       hasPlus: () => this.hasPlus(),
+      net: () => ({
+        tick: this.netMatch?.rollback.tick ?? -1,
+        confirmed: this.netMatch?.rollback.confirmedTick ?? -1,
+        desynced: this.netMatch?.isDesynced ?? false,
+        matched: this.netMatch?.matchedHashes ?? 0,
+        seat: this.online.localSeat(),
+        phase: this.online.get().view.phase,
+      }),
       arena: () => current().options.arena.id,
       startChallenge: (id) => this.startChallenge(id),
       prepareDaily: async () => {

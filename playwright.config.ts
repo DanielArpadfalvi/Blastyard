@@ -22,7 +22,7 @@ const executablePath = resolveChromiumExecutable();
 
 const PERF = /perf\.spec\.ts/;
 /** Specs that render in real time at large sizes (see the `heavy` project). */
-const HEAVY = /(feel|spike|render)\.spec\.ts/;
+const HEAVY = /(feel|spike|render|online)\.spec\.ts/;
 
 export default defineConfig({
   testDir: 'tests/e2e',

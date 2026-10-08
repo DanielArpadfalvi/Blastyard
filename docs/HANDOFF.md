@@ -3,9 +3,14 @@
 Current state, next steps and local setup for the next session (human or agent). Updated after
 every finished task (rule in `CLAUDE.md`).
 
-## Last update: 2026-10-08 – M8 T8.1 purchases done; M9 T9.1–T9.3 done, T9.4 / T9.5 done up to owner steps (devices, store accounts, secrets); APK → Google Drive
+## Last update: 2026-10-08 – online private lobbies (T10.1) on top of a release-ready 1.0
 
 ### Done in the latest session (branch `claude/relaxed-allen-18zaek`)
+- **Online private lobbies (T10.1, owner request)** – create a lobby → six-character code to
+  share, join by code, friends by friend code with invites (live notification in the app),
+  host rules / bots for empty seats, synced matches on every phone with rollback netcode. All
+  details and the owner setup: `docs/ONLINE.md`. Works today with `?net=local` (tabs of one
+  browser); real devices need the Supabase project + `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`.
 - **CI fixes** – the touch tester no longer renders the menu backdrop under itself
   (`GameShell.setCovered`); perf spec findings below.
 - **APK → Google Drive** – `android.yml` runs on every push and overwrites
@@ -54,6 +59,11 @@ every finished task (rule in `CLAUDE.md`).
   report-only in CI, or run it on a GPU runner).
 
 ### Decisions worth knowing
+- Online backend: Supabase Realtime broadcast relay (not WebRTC) – simplest that works through
+  every NAT; behind `NetPort`, so P2P can replace it later. Lobby state is host-authoritative and
+  lives only in the room; the database holds profiles, friendships, invites. Inputs: delay 3,
+  prediction, rollback ≤ 10 ticks, 30 packets / s, hashes every 2 s. Online privacy declared
+  conservatively as "linked" (anonymous account) – owner to review.
 - UI style: no rounded boxes (`--radius: 2px`); new components use `clip-path: var(--chamfer)` /
   `var(--chamfer-sm)` and `box-shadow: inset 0 0 0 1px var(--line)` for the hairline; primary
   action = `--accent` fill, secondary = `--panel-2` with a teal left bar.
@@ -88,6 +98,9 @@ every finished task (rule in `CLAUDE.md`).
   (regenerates `capacitor.settings.gradle`, `CapApp-SPM/Package.swift`, `ios/app-id.xcconfig`).
 
 ### Open owner tasks
+- Online: create the Supabase project (free tier already has 2 active projects), run the
+  migration, enable anonymous sign-ins, set the two `VITE_SUPABASE_*` secrets (`docs/ONLINE.md`).
+  Decide on push notifications for invites while the app is closed (FCM / APNs).
 - Release: store accounts and signing secrets (`docs/RELEASE.md`), device matrix (`docs/QA.md`).
 - Purchases: store products, RevenueCat project + entitlements, GitHub secrets
   `VITE_REVENUECAT_ANDROID_KEY` / `VITE_REVENUECAT_IOS_KEY` (`docs/PURCHASES.md`).
@@ -101,10 +114,10 @@ every finished task (rule in `CLAUDE.md`).
   pre-release once on main) on a device for the touch re-check; try an iOS build on a Mac.
 
 ### Next step
-- All planned 1.0 tasks are implemented. Remaining are owner steps (see "Open owner tasks" and
-  `docs/RELEASE.md` → Owner tasks): store accounts, RevenueCat, GitHub secrets, Pages, support
-  mailbox, the device matrix in `docs/QA.md`, the perf-spec decision. Then tag `v1.0.0`.
-- After that: M10 ideas (1.1) – online private rooms first (T10.1), or gamepad menu navigation.
+- Online follow-ups: push notifications for invites (needs the owner's decision + FCM / APNs keys),
+  deep link from a shared code (`blastyard://join/CODE`), rematch votes, a reconnect window for a
+  dropped phone, optional WebRTC P2P transport.
+- 1.0 release: owner steps (`docs/RELEASE.md`), then tag `v1.0.0`.
 
 ## Local setup
 - `npm ci`, then `npm run check` (≈ 1 min) before every commit; `npm run test:e2e` for UI changes.

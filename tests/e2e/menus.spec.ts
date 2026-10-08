@@ -81,7 +81,7 @@ for (const vp of [
     test.use({ viewport: vp, deviceScaleFactor: 1 });
 
     test('every menu screen fits and back walks one step up', async ({ page }) => {
-      const errors = await open(page, '&lang=hu');
+      const errors = await open(page, '&lang=hu&net=local');
       const tag = `${vp.width}x${vp.height}`;
       await expectButtonsInside(page, page.getByTestId('start-screen'));
       await expectNoTextOverflow(page.getByTestId('start-screen'));
@@ -106,6 +106,7 @@ for (const vp of [
         ['start-daily', 'daily-screen'],
         ['open-settings', 'settings-screen'],
         ['start-customize', 'customize-screen'],
+        ['start-online', 'online-screen'],
       ];
       for (const [button, screen] of views) {
         await page.getByTestId(button).click();
@@ -119,6 +120,18 @@ for (const vp of [
         expect(await back(page)).toBe(true);
         await expect(page.getByTestId('start-screen')).toBeVisible();
       }
+
+      // Online lobby (local tabs backend): the lobby screen fits too.
+      await page.getByTestId('start-online').click();
+      await page.getByTestId('online-create').click();
+      await expect(page.getByTestId('online-lobby')).toBeVisible();
+      await expectButtonsInside(page, page.getByTestId('online-lobby'));
+      await expectNoTextOverflow(page.getByTestId('online-lobby'));
+      await shot(page, `online-lobby-${tag}.png`);
+      expect(await back(page)).toBe(true);
+      await expect(page.getByTestId('online-screen')).toBeVisible();
+      expect(await back(page)).toBe(true);
+      await expect(page.getByTestId('start-screen')).toBeVisible();
 
       // T8.1: the paywall (from the settings) and the custom rules editor (Blastyard+).
       await page.getByTestId('open-settings').click();

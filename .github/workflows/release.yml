@@ -73,6 +73,8 @@ jobs:
       - run: npx vite build
         env:
           VITE_REVENUECAT_ANDROID_KEY: ${{ secrets.VITE_REVENUECAT_ANDROID_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       - run: npx cap sync android
       - name: Signed App Bundle and APK
         working-directory: android
@@ -118,6 +120,8 @@ jobs:
       - run: npx vite build
         env:
           VITE_REVENUECAT_IOS_KEY: ${{ secrets.VITE_REVENUECAT_IOS_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
       # Writes ios/app-id.xcconfig: bundle id, version (package.json), build (VERSION_CODE).
       - run: npx cap sync ios
       - name: Archive and export (cloud-managed signing)
