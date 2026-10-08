@@ -18,11 +18,16 @@
  * arena and at most 15% standoffs per arena (the classic arenas sit at 2-5% with Normal bots; the
  * literal 1% target is not reachable without changing the 5x5 rule itself).
  *
- * Usage: `npm run bot:league [-- --matches 200 --seed 1]` or `npm run bot:league -- --arenas 100`
+ * Match length (T9.4, `--match-length [N]`): N complete Classic matches (first to 3) of four
+ * Normal bots on the free arenas in turn; the wall-clock length counts every tick (countdowns and
+ * round breaks included). Gate: mean 6-12 min (PLAN: a party match is a few minutes, not an hour).
+ *
+ * Usage: `npm run bot:league [-- --matches 200 --seed 1]`, `npm run bot:league -- --arenas 100`
+ * or `npm run bot:league -- --match-length 60`
  */
 
 import { CLASSIC_ARENAS } from '../src/content/arenas/classic';
-import { ALL_ARENAS } from '../src/content/arenas';
+import { ALL_ARENAS, FREE_ARENAS } from '../src/content/arenas';
 import {
   BotLevel,
   EventKind,
@@ -263,6 +268,62 @@ export function runArena(
   };
 }
 
+export interface MatchLengthResult {
+  readonly matches: number;
+  readonly meanMinutes: number;
+  readonly minMinutes: number;
+  readonly maxMinutes: number;
+  readonly meanRounds: number;
+}
+
+/** `matches` complete Classic matches of four Normal bots; lengths in wall-clock minutes. */
+export function runMatchLength(matches: number, seed: number): MatchLengthResult {
+  let total = 0;
+  let min = Infinity;
+  let max = 0;
+  let rounds = 0;
+  for (let m = 0; m < matches; m++) {
+    const arena = FREE_ARENAS[m % FREE_ARENAS.length]!;
+    const state = createState({
+      seed: seed * 7919 + m,
+      arena,
+      seats: [true, true, true, true],
+      bots: [BotLevel.NORMAL, BotLevel.NORMAL, BotLevel.NORMAL, BotLevel.NORMAL],
+    });
+    let ticks = 0;
+    while (ticks < MAX_MATCH_TICKS && state.hdr[Hdr.PHASE] !== Phase.MATCH_OVER) {
+      for (const e of step(state, NO_INPUT)) if (e.kind === EventKind.ROUND_END) rounds++;
+      ticks++;
+    }
+    total += ticks;
+    min = Math.min(min, ticks);
+    max = Math.max(max, ticks);
+  }
+  const minutes = (ticks: number): number => ticks / 60 / 60;
+  return {
+    matches,
+    meanMinutes: minutes(total / matches),
+    minMinutes: minutes(min),
+    maxMinutes: minutes(max),
+    meanRounds: rounds / matches,
+  };
+}
+
+function mainMatchLength(args: readonly string[]): number {
+  const i = args.indexOf('--match-length');
+  const next = Number(args[i + 1]);
+  const matches = Number.isInteger(next) && next > 0 ? next : 60;
+  const r = runMatchLength(matches, readArg(args, 'seed', 1));
+  console.log(
+    `Classic, 4 x Normal: mean match ${r.meanMinutes.toFixed(1)} min ` +
+      `(min ${r.minMinutes.toFixed(1)}, max ${r.maxMinutes.toFixed(1)}), ` +
+      `${r.meanRounds.toFixed(1)} rounds per match, ${r.matches} matches`,
+  );
+  const ok = r.meanMinutes >= 6 && r.meanMinutes <= 12;
+  console.log(ok ? 'bot-league match length: OK' : 'bot-league match length: FAILED (6-12 min)');
+  return ok ? 0 : 1;
+}
+
 function readArg(args: readonly string[], name: string, fallback: number): number {
   const i = args.indexOf(`--${name}`);
   if (i < 0) return fallback;
@@ -302,6 +363,7 @@ const pct = (x: number): string => `${(x * 100).toFixed(1)}%`;
 /** CLI entry (called by `scripts/run-ts.mjs`). Returns the process exit code. */
 export function main(args: readonly string[]): number {
   if (args.includes('--arenas')) return mainArenas(args);
+  if (args.includes('--match-length')) return mainMatchLength(args);
   const matches = readArg(args, 'matches', 200);
   const seed = readArg(args, 'seed', 1);
   const failures: string[] = [];

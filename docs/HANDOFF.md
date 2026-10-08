@@ -3,7 +3,7 @@
 Current state, next steps and local setup for the next session (human or agent). Updated after
 every finished task (rule in `CLAUDE.md`).
 
-## Last update: 2026-10-08 – M8 T8.1 purchases done; M9 T9.1 listing, T9.2 screenshots, T9.3 site done; APK → Google Drive
+## Last update: 2026-10-08 – M8 T8.1 purchases done; M9 T9.1–T9.3 done, T9.4 / T9.5 done up to owner steps (devices, store accounts, secrets); APK → Google Drive
 
 ### Done in the latest session (branch `claude/relaxed-allen-18zaek`)
 - **CI fixes** – the touch tester no longer renders the menu backdrop under itself
@@ -25,6 +25,11 @@ every finished task (rule in `CLAUDE.md`).
   plates instead of pills, hazard stripe on every card, italic uppercase display type, flat
   segmented controls; start screen = Party hero tile + 3 mode tiles + secondary row
   (`.start-grid`, `src/ui/StartScreen.tsx`). All test ids unchanged; HU overflow checks green.
+- **T9.4 QA** – `docs/QA.md` (sim stats, review pass, triaged fix list, device matrix to
+  fill); `npm run bot:league -- --match-length N`.
+- **T9.5 release prep** – version 1.0.0 from `package.json` only (Android `build.gradle`, iOS
+  via `ios/app-id.xcconfig`), iOS `PrivacyInfo.xcprivacy`, Android signing from env,
+  `release.yml` (tag → signed AAB / APK / IPA → draft release), `docs/RELEASE.md`.
 - **T9.3 site** – `scripts/site.ts` / `siteContent.ts` (`npm run site`), built by `pages.yml`
   into `/Blastyard/site/`; app links per language (`siteUrl`).
 - Earlier in this branch: T5.3–T5.5, M6, M7 (see `docs/TASKS.md` "Done:" notes).
@@ -83,6 +88,7 @@ every finished task (rule in `CLAUDE.md`).
   (regenerates `capacitor.settings.gradle`, `CapApp-SPM/Package.swift`, `ios/app-id.xcconfig`).
 
 ### Open owner tasks
+- Release: store accounts and signing secrets (`docs/RELEASE.md`), device matrix (`docs/QA.md`).
 - Purchases: store products, RevenueCat project + entitlements, GitHub secrets
   `VITE_REVENUECAT_ANDROID_KEY` / `VITE_REVENUECAT_IOS_KEY` (`docs/PURCHASES.md`).
 - Site: enable GitHub Pages (Settings → Pages → GitHub Actions), set the repository variable
@@ -95,10 +101,10 @@ every finished task (rule in `CLAUDE.md`).
   pre-release once on main) on a device for the touch re-check; try an iOS build on a Mac.
 
 ### Next step
-- **M9 – T9.4** (QA & balance: bot-league + match-length sims, `docs/QA.md`; device checks
-  are owner tasks) and T9.5 (versions aligned, hidden sourcemaps, iOS `PrivacyInfo.xcprivacy`,
-  signed release workflows, `docs/RELEASE.md`).
-- Gamepad polish (later): menu navigation with a controller, Start = pause.
+- All planned 1.0 tasks are implemented. Remaining are owner steps (see "Open owner tasks" and
+  `docs/RELEASE.md` → Owner tasks): store accounts, RevenueCat, GitHub secrets, Pages, support
+  mailbox, the device matrix in `docs/QA.md`, the perf-spec decision. Then tag `v1.0.0`.
+- After that: M10 ideas (1.1) – online private rooms first (T10.1), or gamepad menu navigation.
 
 ## Local setup
 - `npm ci`, then `npm run check` (≈ 1 min) before every commit; `npm run test:e2e` for UI changes.

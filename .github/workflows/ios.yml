@@ -26,7 +26,9 @@ jobs:
   build:
     runs-on: macos-15
     env:
-      VERSION_NAME: 0.1.${{ github.run_number }}
+      # Version from package.json (via scripts/native-config.ts), build number = run number.
+      VERSION_CODE: ${{ github.run_number }}
+      BUILD_LABEL: build-${{ github.run_number }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -39,7 +41,7 @@ jobs:
       - run: npx vite build
         env:
           VITE_REVENUECAT_IOS_KEY: ${{ secrets.VITE_REVENUECAT_IOS_KEY }}
-      # Also writes ios/app-id.xcconfig (bundle id) through the capacitor:sync:after hook.
+      # Also writes ios/app-id.xcconfig (bundle id, version, build) through the capacitor:sync:after hook.
       - run: npx cap sync ios
       - name: Show Xcode version
         run: xcodebuild -version
@@ -55,12 +57,11 @@ jobs:
           xcodebuild -project App.xcodeproj -scheme App -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' \
             -derivedDataPath build/device \
-            MARKETING_VERSION=${{ env.VERSION_NAME }} CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
       - name: Zip the app
         run: |
           cd ios/App/build/device/Build/Products/Release-iphoneos
-          zip -qr "$GITHUB_WORKSPACE/blastyard-ios-unsigned-${{ env.VERSION_NAME }}.zip" App.app
+          zip -qr "$GITHUB_WORKSPACE/blastyard-ios-unsigned-${{ env.BUILD_LABEL }}.zip" App.app
       - uses: actions/upload-artifact@v5
         with:
           name: blastyard-ios-unsigned

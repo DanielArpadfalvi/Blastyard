@@ -7,6 +7,8 @@ if (!capacitorConfigFile.exists()) {
     throw new GradleException("Missing ${capacitorConfigFile} – run `npx cap sync android` first.")
 }
 def blastyardAppId = new groovy.json.JsonSlurper().parse(capacitorConfigFile).appId
+// The version has one source too: package.json (shown in Settings → About as well).
+def blastyardVersion = new groovy.json.JsonSlurper().parse(rootProject.file('../package.json')).version
 
 android {
     // Java / resource namespace only (not the store id, which comes from the Capacitor config).
@@ -19,7 +21,7 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode((System.getenv("VERSION_CODE") ?: "1").toInteger())
-        versionName(System.getenv("VERSION_NAME") ?: "1.0.0")
+        versionName blastyardVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -27,8 +29,24 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Store signing (T9.5, release.yml): only when the keystore is provided through the env;
+    // without it the release build stays unsigned (the regular CI artifact).
+    def releaseKeystore = System.getenv("ANDROID_KEYSTORE_FILE")
+    signingConfigs {
+        release {
+            if (releaseKeystore) {
+                storeFile file(releaseKeystore)
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
     buildTypes {
         release {
+            if (releaseKeystore) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

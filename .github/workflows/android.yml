@@ -19,8 +19,9 @@ jobs:
   debug-apk:
     runs-on: ubuntu-latest
     env:
+      # versionName comes from package.json (build.gradle); versionCode = run number.
       VERSION_CODE: ${{ github.run_number }}
-      VERSION_NAME: 0.1.${{ github.run_number }}
+      BUILD_LABEL: build-${{ github.run_number }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -44,8 +45,8 @@ jobs:
         run: ./gradlew assembleDebug bundleRelease --no-daemon
       - name: Rename APK / AAB
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk blastyard-debug-${{ env.VERSION_NAME }}.apk
-          cp android/app/build/outputs/bundle/release/app-release.aab blastyard-unsigned-${{ env.VERSION_NAME }}.aab
+          cp android/app/build/outputs/apk/debug/app-debug.apk blastyard-debug-${{ env.BUILD_LABEL }}.apk
+          cp android/app/build/outputs/bundle/release/app-release.aab blastyard-unsigned-${{ env.BUILD_LABEL }}.aab
       - uses: actions/upload-artifact@v5
         with:
           name: blastyard-debug-apk
@@ -63,7 +64,7 @@ jobs:
           gh release delete android-debug-latest --yes --cleanup-tag || true
           gh release create android-debug-latest blastyard-debug-*.apk \
             --prerelease --target "${{ github.sha }}" \
-            --title "Blastyard debug APK (${{ env.VERSION_NAME }})" \
+            --title "Blastyard debug APK (${{ env.BUILD_LABEL }})" \
             --notes "Automatic test build from ${{ github.ref_name }} @ ${{ github.sha }}. Not for store upload."
       # Owner's Drive folder "Mobile games": always one file, overwritten by the newest build.
       # Needs the secret GDRIVE_SERVICE_ACCOUNT_JSON (or GDRIVE_CLIENT_ID / GDRIVE_CLIENT_SECRET /

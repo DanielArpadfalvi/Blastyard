@@ -1,0 +1,169 @@
+# Store release builds (T9.5): push a tag `v<package.json version>` (e.g. v1.0.0) or run by hand.
+# Produces a signed Android App Bundle + APK and a signed iOS .ipa as artifacts of a draft GitHub
+# release; uploading to Google Play / App Store Connect stays an owner step (docs/RELEASE.md).
+#
+# Secrets (Settings → Secrets and variables → Actions):
+#   Android: ANDROID_KEYSTORE_BASE64 (base64 of the upload keystore), ANDROID_KEYSTORE_PASSWORD,
+#            ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+#   iOS:     APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_BASE64 (App Store Connect API
+#            key with the App Manager or Admin role – cloud-managed signing, no certificates)
+#   Both:    VITE_REVENUECAT_ANDROID_KEY / VITE_REVENUECAT_IOS_KEY (without them the store says
+#            "unavailable" – the release refuses to build without them)
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - id: v
+        name: Version matches the tag
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "v$version" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version $version"
+            exit 1
+          fi
+      - run: npm run check
+
+  android:
+    needs: verify
+    runs-on: ubuntu-latest
+    env:
+      VERSION_CODE: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Secrets present
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          RC: ${{ secrets.VITE_REVENUECAT_ANDROID_KEY }}
+        run: |
+          [ -n "$KS" ] || { echo "::error::ANDROID_KEYSTORE_BASE64 is not set (docs/RELEASE.md)"; exit 1; }
+          [ -n "$RC" ] || { echo "::error::VITE_REVENUECAT_ANDROID_KEY is not set (docs/PURCHASES.md)"; exit 1; }
+      - run: npm ci
+      - run: npx vite build
+        env:
+          VITE_REVENUECAT_ANDROID_KEY: ${{ secrets.VITE_REVENUECAT_ANDROID_KEY }}
+      - run: npx cap sync android
+      - name: Signed App Bundle and APK
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          export ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/upload.jks"
+          ./gradlew bundleRelease assembleRelease --no-daemon
+          rm -f "$RUNNER_TEMP/upload.jks"
+      - name: Collect
+        run: |
+          v=${{ needs.verify.outputs.version }}
+          cp android/app/build/outputs/bundle/release/app-release.aab "blastyard-$v.aab"
+          cp android/app/build/outputs/apk/release/app-release.apk "blastyard-$v.apk"
+      - uses: actions/upload-artifact@v5
+        with:
+          name: blastyard-android-release
+          path: blastyard-*.a*
+
+  ios:
+    needs: verify
+    runs-on: macos-15
+    env:
+      VERSION_CODE: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Secrets present
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          KEY: ${{ secrets.ASC_KEY_P8_BASE64 }}
+          RC: ${{ secrets.VITE_REVENUECAT_IOS_KEY }}
+        run: |
+          [ -n "$TEAM" ] && [ -n "$KEY" ] || { echo "::error::APPLE_TEAM_ID / ASC_* secrets are not set (docs/RELEASE.md)"; exit 1; }
+          [ -n "$RC" ] || { echo "::error::VITE_REVENUECAT_IOS_KEY is not set (docs/PURCHASES.md)"; exit 1; }
+      - run: npm ci
+      - run: npx vite build
+        env:
+          VITE_REVENUECAT_IOS_KEY: ${{ secrets.VITE_REVENUECAT_IOS_KEY }}
+      # Writes ios/app-id.xcconfig: bundle id, version (package.json), build (VERSION_CODE).
+      - run: npx cap sync ios
+      - name: Archive and export (cloud-managed signing)
+        working-directory: ios/App
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ISSUER: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          echo "${{ secrets.ASC_KEY_P8_BASE64 }}" | base64 -d > "$RUNNER_TEMP/asc.p8"
+          AUTH="-allowProvisioningUpdates -authenticationKeyPath $RUNNER_TEMP/asc.p8 -authenticationKeyID $KEY_ID -authenticationKeyIssuerID $ISSUER"
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath build/Blastyard.xcarchive \
+            DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic $AUTH archive
+          cat > "$RUNNER_TEMP/export.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>$TEAM</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>destination</key><string>export</string>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath build/Blastyard.xcarchive \
+            -exportOptionsPlist "$RUNNER_TEMP/export.plist" -exportPath build/export $AUTH
+          rm -f "$RUNNER_TEMP/asc.p8"
+          cp build/export/*.ipa "$GITHUB_WORKSPACE/blastyard-${{ needs.verify.outputs.version }}.ipa"
+      - uses: actions/upload-artifact@v5
+        with:
+          name: blastyard-ios-release
+          path: blastyard-*.ipa
+
+  draft:
+    needs: [verify, android, ios]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: out
+          merge-multiple: true
+      - name: Draft GitHub release with the store builds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" out/* --repo "${GITHUB_REPOSITORY}" --draft \
+            --title "Blastyard ${{ needs.verify.outputs.version }}" \
+            --notes "Store builds for ${GITHUB_REF_NAME}. Upload the .aab to Google Play and the .ipa to App Store Connect (Transporter) – docs/RELEASE.md."
