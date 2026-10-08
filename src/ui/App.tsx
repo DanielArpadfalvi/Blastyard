@@ -49,6 +49,11 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
   const [state, setState] = useState<ShellState | null>(shell ? shell.getState() : null);
   useEffect(() => onLanguageChange(() => setRevision((r) => r + 1)), []);
   useEffect(() => (shell ? shell.subscribe(setState) : undefined), [shell]);
+  // The touch tester is opaque and full screen: nothing behind it needs drawing.
+  useEffect(() => {
+    shell?.setCovered(tester);
+    return () => shell?.setCovered(false);
+  }, [shell, tester]);
   // Stars and the entitlement change what the map shows.
   useEffect(() => {
     if (!shell) return undefined;

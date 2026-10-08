@@ -119,6 +119,27 @@ test.describe('device-spike tools', () => {
     expect(errors).toEqual([]);
   });
 
+  test('the menu backdrop is not drawn behind the opaque touch tester', async ({ page }) => {
+    const errors = watchErrors(page);
+    await page.goto('/?test&game&spike&lang=en');
+    await page.waitForFunction(() => window.__blastyardGame?.ready === true);
+    const frames = () => page.evaluate(() => window.__blastyardGame!.frames());
+    const advances = async () => {
+      const a = await frames();
+      await page.waitForTimeout(500);
+      return (await frames()) > a;
+    };
+    expect(await advances()).toBe(true);
+    await page.getByTestId('start-touchtest').click();
+    await expect(page.getByTestId('touch-tester')).toBeVisible();
+    await page.waitForTimeout(100);
+    expect(await advances()).toBe(false);
+    await page.getByTestId('tt-back').click();
+    await expect(page.getByTestId('start-screen')).toBeVisible();
+    expect(await advances()).toBe(true);
+    expect(errors).toEqual([]);
+  });
+
   for (const screen of SCREENS) {
     const tag = `${screen.width}x${screen.height}`;
 

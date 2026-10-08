@@ -3,7 +3,7 @@
 Current state, next steps and local setup for the next session (human or agent). Updated after
 every finished task (rule in `CLAUDE.md`).
 
-## Last update: 2026-10-08 – M7: T7.1 shell + T7.2 assets done, T7.3 native CI waiting on the owner's device check
+## Last update: 2026-10-08 – M7 done (T7.3 waits on the owner's device check); CI e2e investigated
 
 ### Done in the latest session (branch `claude/relaxed-allen-18zaek`)
 - **T5.3 daily challenge** – `src/game/daily.ts`, `dailyStore.ts`, `src/ui/DailyScreen.tsx`; the
@@ -39,10 +39,19 @@ every finished task (rule in `CLAUDE.md`).
 ### State of the checks
 - `npm run check`: green (typecheck, lint, format, unit tests, content validation incl. the
   tutorial's reference solution).
-- e2e: all new specs green (`daily`, `tutorial`, `gamepad`, `menus`, `customize`). Known red **in this cloud container
-  only**, also without these changes: `feel.spec.ts` (5 tests) and the 2048×1536 touch tester in
-  `spike.spec.ts` time out (slow software WebGL; CI gives 120 s). `render.spec.ts` 2048×1536 can
-  time out when the whole suite runs in parallel; alone it passes.
+- CI (`ci.yml`) e2e runs in two steps: the `landscape-chromium` project (all regular specs,
+  green), then the real-time render specs (`heavy` project: feel, spike, render) and `perf` on
+  one worker.
+- The 2048×1536 touch tester (`spike.spec.ts`) timed out on CI because the attract match kept
+  rendering under the opaque tester (software WebGL). Fixed: `GameShell.setCovered()` skips
+  frames while the tester is open (App effect); e2e "the menu backdrop is not drawn behind the
+  opaque touch tester". Locally the test now takes 6.5 s (it timed out before, on main too).
+- **Known red, pre-existing on main:** `perf.spec.ts` (≥ 55 FPS mean at 4× throttle). Headless
+  SwiftShader is fill-rate bound: CI measured 30 FPS on main and 14.5 on the branch, and locally
+  base and branch both measure ≈ 3.8 FPS with the same main-thread cost (≈ 8.7–8.9 ms/frame), so
+  no regression on the branch. The threshold is not lowered: the T3.3 device measurement on a
+  real mid-range phone is the real check (open question for the owner: make the perf spec
+  report-only in CI, or run it on a GPU runner).
 
 ### Decisions worth knowing
 - Daily challenge: proven winnable in the browser by the Expert bot (first qualifying seed); the
@@ -67,6 +76,7 @@ every finished task (rule in `CLAUDE.md`).
   (regenerates `capacitor.settings.gradle`, `CapApp-SPM/Package.swift`, `ios/app-id.xcconfig`).
 
 ### Open owner tasks
+- Decide how the CI perf spec should run (see above).
 - T2.4 device touch spike (`docs/touch-spike.md` §1–3) and the gamepad device check (§4).
 - T7.3: install the debug APK (artifact `blastyard-debug-apk`, or the `android-debug-latest`
   pre-release once on main) on a device for the touch re-check; try an iOS build on a Mac.
@@ -78,30 +88,6 @@ every finished task (rule in `CLAUDE.md`).
   no party feature / player count / bot level / power-up is gated. RevenueCat keys are owner
   secrets; without a key the native build shows "store unavailable" (never unlocks).
 - Then M9 release prep (store texts, screenshot generator, privacy site, QA, release workflow).
-- Gamepad polish (later): menu navigation with a controller, Start = pause.
-
-### Native builds
-- Not possible in this container (dl.google.com blocked, no macOS). Verify in GitHub Actions:
-  `android.yml` can be started on any branch (workflow_dispatch); `ios.yml` runs on push when
-  iOS inputs change (workflow_dispatch only works once the file is on main).
-- After changing native code or Capacitor plugins: `npm run build && npx cap sync` locally
-  (regenerates `capacitor.settings.gradle`, `CapApp-SPM/Package.swift`, `ios/app-id.xcconfig`).
-
-### Open owner tasks
-- T2.4 device touch spike (`docs/touch-spike.md` §1–3) and the gamepad device check (§4).
-- T7.3: install the debug APK (artifact `blastyard-debug-apk`, or the `android-debug-latest`
-  pre-release once on main) on a device for the touch re-check; try an iOS build on a Mac.
-
-### Next step
-- **M7 – T7.1 Capacitor 8 shell**: Android project exists (keep-awake + immersive in
-  `MainActivity.java`, `@capacitor/app` for back); still open per TASKS: iOS project (macOS CI
-  only – can't build here), orientation lock during lobby/match, safe areas, Android
-  system-gesture exclusion rects, iOS deferred edge gestures, status bar, lifecycle pause/resume
-  via Capacitor App `pause`/`resume`, the iOS WKWebView first-responder for gamepads (T5.5), all
-  behind `src/platform` with web mocks + unit tests. `npx cap sync` needs built assets
-  (`npm run build` first); native builds only in GitHub Actions.
-- Then T7.2 icons/splash from code, T7.3 native CI, M8 purchases (RevenueCat behind
-  `src/platform/entitlement.ts`, which already has `restore()`).
 - Gamepad polish (later): menu navigation with a controller, Start = pause.
 
 ## Local setup

@@ -351,6 +351,8 @@ export class GameShell {
   private readonly governor: QualityGovernor;
   private frameCount = 0;
   private rafId = 0;
+  /** An opaque full-screen panel (touch tester) hides the canvas: no frames are drawn. */
+  private covered = false;
   /** Main-thread time spent in frames of the current match (perf measurements). */
   private workMs = 0;
   private workFrames = 0;
@@ -543,7 +545,7 @@ export class GameShell {
     let last = -1;
     const loop = (now: number): void => {
       this.rafId = raf(loop);
-      if (!this.pacer.accept(now)) return;
+      if (this.covered || !this.pacer.accept(now)) return;
       if (last >= 0 && this.state.screen === 'playing') this.governor.frame(now - last);
       last = now;
       this.frameCount++;
@@ -553,6 +555,14 @@ export class GameShell {
       this.workFrames++;
     };
     this.rafId = raf(loop);
+  }
+
+  /**
+   * An opaque panel covers the whole canvas (the touch tester): skip drawing behind it, which
+   * keeps its touch handling responsive on big screens. Only for menus – never during a match.
+   */
+  setCovered(on: boolean): void {
+    this.covered = on && this.state.screen === 'menu';
   }
 
   /** Stops the frame loop and audio (page teardown, tests). */
