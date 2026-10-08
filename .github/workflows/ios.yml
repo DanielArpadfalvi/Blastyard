@@ -4,9 +4,18 @@ name: iOS
 # Xcode project, the Swift sources and the Swift Package plugins compile, and an unsigned device
 # build (`.app` zipped as an artifact). Store signing comes with the release workflow (T9.5).
 
+# macOS minutes are expensive: pushes build only when something the iOS app is made of changed
+# (agent branches included, so native changes are verified before they reach main).
 on:
   push:
-    branches: [main]
+    branches: [main, 'claude/**']
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+      - 'capacitor.config.ts'
+      - 'package-lock.json'
+      - 'src/platform/**'
+      - 'scripts/native-config.ts'
   workflow_dispatch:
 
 concurrency:
