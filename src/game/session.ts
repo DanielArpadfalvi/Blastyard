@@ -56,8 +56,10 @@ import {
   type ObjectiveProgress,
   type RunStats,
   type RunStatus,
+  type StageDef,
   type StarCond,
 } from './challenge';
+import { tipForEvent, type TipId } from './tips';
 import type { DailyOutcome } from './dailyStore';
 import { HapticsDirector } from './haptics';
 import { HudSignature, RESULT_DELAY_TICKS, hudModel, type HudModel } from './hud';
@@ -88,7 +90,12 @@ export interface SessionOptions {
   /** `party` mode: the warm-up lobby instead of the match. */
   readonly lobby?: boolean;
   /** `challenge` mode: the level and its tuning (seeds, star thresholds). */
-  readonly challenge?: { readonly level: LevelDef; readonly tuning: LevelTuning };
+  readonly challenge?: {
+    readonly level: LevelDef;
+    readonly tuning: LevelTuning;
+    /** Stage to begin at (the tutorial resumes at a lost step). */
+    readonly startStage?: number;
+  };
   /** Never advance on real time (tests drive ticks through `advance`). */
   readonly manualClock: boolean;
   /** Gesture clock for tap classification (tests); default: event timestamps. */
@@ -152,6 +159,8 @@ export interface ChallengeResult {
   readonly stars: number;
   /** The two extra star conditions (stars 2 and 3) and whether each is met. */
   readonly conds: ReadonlyArray<{ readonly cond: StarCond; readonly met: boolean }>;
+  /** Index of the stage the run ended on. */
+  readonly stage: number;
   /** Daily challenge only (added by the shell): official / practice, best and streak. */
   readonly daily?: DailyOutcome;
 }
@@ -164,6 +173,8 @@ export interface SessionCallbacks {
   onLobbyDone?(orientations: readonly SeatOrientation[]): void;
   /** Challenge: won or lost (after a short beat to see what happened). */
   onChallengeOver?(result: ChallengeResult): void;
+  /** A human seat met something a first-time tip explains (T5.4); the shell decides to show it. */
+  onTip?(tip: TipId): void;
 }
 
 /** Ticks the arena keeps running after a challenge is won / lost before the result shows. */
@@ -173,6 +184,18 @@ export const CHALLENGE_LOSS_DELAY = 90;
 export const STAGE_DELAY = 60;
 
 const NO_EVENTS: readonly SimEvent[] = [];
+
+/** Seats of a challenge stage: the player in seat 0, its bots after it. */
+function stagePlan(stage: StageDef | undefined): SeatPlan[] {
+  const bots = stage?.bots ?? [];
+  return [0, 1, 2, 3].map((seat): SeatPlan => {
+    if (seat === 0) return { seat, kind: 'human', orientation: 0 };
+    if (seat <= bots.length) {
+      return { seat, kind: 'bot', orientation: 0, botLevel: bots[seat - 1] as number };
+    }
+    return { seat, kind: 'off', orientation: 0 };
+  });
+}
 
 /** The arena of a warm-up lobby: the match arena without crates, so there is room to play. */
 export function lobbyArena(arena: ArenaDef): ArenaDef {
@@ -229,7 +252,9 @@ export class GameSession {
     if (mode === 'challenge' && !options.challenge) throw new Error('challenge mode needs a level');
     this.plan = this.initialPlan();
     this.kind = options.party?.layout ?? layoutKindOf(mode);
-    this.tracker = options.challenge ? new ChallengeTracker(options.challenge.level) : null;
+    this.tracker = options.challenge
+      ? new ChallengeTracker(options.challenge.level, options.challenge.startStage ?? 0)
+      : null;
     const state = this.initialState();
     this.keyboard = new KeyboardSeats(keyBindingsFor(mode, this.plan));
     this.controller = new InputController([this.zones, this.keyboard]);
@@ -277,16 +302,7 @@ export class GameSession {
   private initialPlan(): SeatPlan[] {
     const { mode, party, challenge } = this.options;
     if (party) return party.seats.map((p) => ({ ...p }));
-    if (challenge) {
-      const bots = challenge.level.stages[0]?.bots ?? [];
-      return [0, 1, 2, 3].map((seat): SeatPlan => {
-        if (seat === 0) return { seat, kind: 'human', orientation: 0 };
-        if (seat <= bots.length) {
-          return { seat, kind: 'bot', orientation: 0, botLevel: bots[seat - 1] as number };
-        }
-        return { seat, kind: 'off', orientation: 0 };
-      });
-    }
+    if (challenge) return stagePlan(challenge.level.stages[challenge.startStage ?? 0]);
     return seatPlan(mode, this.options.bots);
   }
 
@@ -298,7 +314,8 @@ export class GameSession {
       );
     }
     if (challenge) {
-      return createState(stageSetup(challenge.level, 0, challenge.tuning.seeds[0] ?? seed));
+      const k = challenge.startStage ?? 0;
+      return createState(stageSetup(challenge.level, k, challenge.tuning.seeds[k] ?? seed));
     }
     return createState(matchSetupFor(mode, this.options));
   }
@@ -499,6 +516,16 @@ export class GameSession {
     this.view.pushEvents(events, this.runnerRef.state);
     this.audio?.onEvents(events);
     this.haptics?.onEvents(events);
+    if (this.callbacks.onTip && this.mode !== 'attract' && !this.lobbyTracker) {
+      for (const e of events) {
+        const tip = tipForEvent(e, this.humanSeats);
+        if (tip) this.callbacks.onTip(tip);
+      }
+    }
+  }
+
+  private get humanSeats(): number[] {
+    return this.plan.filter((p) => p.kind === 'human').map((p) => p.seat);
   }
 
   /** Per-tick bookkeeping after `step`: lobby readiness, challenge objective. */
@@ -549,6 +576,9 @@ export class GameSession {
     this.view.bindArena(state, tracker.stageDef.arena.theme);
     this.app.stage.addChildAt(this.view.root, 0);
     this.view.setLayout(this.layout);
+    // The next stage may bring other bots: their seats get HUD panels.
+    this.plan.splice(0, this.plan.length, ...stagePlan(tracker.stageDef));
+    this.layoutKey = '';
     this.matchEndTick = -1;
     const old = this.runnerRef;
     this.runnerRef = this.makeRunner(state);
@@ -620,6 +650,7 @@ export class GameSession {
           stats,
           stars: won ? starsFor(true, stats, challenge.tuning.stars) : 0,
           conds,
+          stage: tracker.stage,
         });
       }
       return;

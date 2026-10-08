@@ -103,7 +103,8 @@ const MODIFIER_EFFECT: Readonly<Record<DailyModifier, ModifierEffect>> = {
 };
 
 /** Objectives a day can ask for, with how often they come up. */
-const OBJECTIVE_WEIGHTS: ReadonlyArray<readonly [ObjectiveType, number]> = [
+type DailyObjective = Exclude<ObjectiveType, 'chain'>;
+const OBJECTIVE_WEIGHTS: ReadonlyArray<readonly [DailyObjective, number]> = [
   ['crates', 3],
   ['monsters', 3],
   ['flag', 2],
@@ -182,7 +183,7 @@ export function dailyCandidate(day: number, roll = 0): DailyDef {
   const pick = <T>(items: readonly T[]): T => items[randInt(rng, STREAM, items.length)] as T;
   const total = OBJECTIVE_WEIGHTS.reduce((a, [, w]) => a + w, 0);
   let r = randInt(rng, STREAM, total);
-  let type: ObjectiveType = 'crates';
+  let type: DailyObjective = 'crates';
   for (const [kind, w] of OBJECTIVE_WEIGHTS) {
     if (r < w) {
       type = kind;

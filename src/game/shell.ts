@@ -24,6 +24,7 @@ import type { Application } from 'pixi.js';
 import { GameAudio, type AudioStats } from '../audio';
 import { FREE_ARENAS, arenaById } from '../content/arenas';
 import { levelById, nextLevel, tuningOf } from '../content/challenges';
+import { TUTORIAL, TUTORIAL_ID } from '../content/tutorial';
 import {
   BotLevel,
   Hdr,
@@ -67,6 +68,7 @@ import { ChallengeProgress } from './progress';
 import { dayNumber, prepareDailyAsync, type DailyChallenge } from './daily';
 import { DailyStore, betterRecord, type DailyView } from './dailyStore';
 import { botPlay } from './solver';
+import { TIP_IDS, TipsStore, type TipId } from './tips';
 import type { HudModel } from './hud';
 import type { LobbySeatView } from './lobby';
 import { MAX_CORNER_BOTS, type GameMode } from './modes';
@@ -90,14 +92,21 @@ import {
 } from './settings';
 
 export type PlayMode = Exclude<GameMode, 'attract' | 'party' | 'challenge'>;
-/** `lobby`: the party's warm-up arena; `challengeResult`: a challenge was won or lost. */
-export type Screen = 'menu' | 'lobby' | 'playing' | 'result' | 'challengeResult';
+/**
+ * `lobby`: the party's warm-up arena; `challengeResult`: a challenge was won or lost;
+ * `tutorialDone`: the last tutorial step was won.
+ */
+export type Screen = 'menu' | 'lobby' | 'playing' | 'result' | 'challengeResult' | 'tutorialDone';
 
 export interface ShellState {
   readonly screen: Screen;
   readonly snapshot: SessionSnapshot | null;
   readonly result: MatchResult | null;
   readonly challengeResult: ChallengeResult | null;
+  /** A first-time tip to show right now (T5.4). */
+  readonly tip: TipId | null;
+  /** Tutorial: index of the step being retried after a lost attempt (null = none). */
+  readonly tutorialRetry: number | null;
 }
 
 /** What "play again" repeats. */
@@ -106,7 +115,8 @@ type LastStart =
   | { readonly kind: 'party'; readonly config: PartyConfig }
   | { readonly kind: 'quick' }
   | { readonly kind: 'challenge'; readonly id: string }
-  | { readonly kind: 'daily' };
+  | { readonly kind: 'daily' }
+  | { readonly kind: 'tutorial' };
 
 export interface ShellOptions {
   readonly test: boolean;
@@ -132,6 +142,7 @@ export interface ShellDeps {
   readonly entitlements?: MockEntitlements;
   readonly progress?: ChallengeProgress;
   readonly daily?: DailyStore;
+  readonly tips?: TipsStore;
   readonly partyStore?: PartyStore;
   readonly audio?: GameAudio;
   readonly haptics?: HapticsPort;
@@ -173,6 +184,12 @@ export interface GameTestHook {
   dailySolution(): number[];
   /** Today's daily progress: official attempt, best, streak. */
   dailyView(): DailyView;
+  /** Tutorial: starts it (at step `stage`, 0-based). */
+  startTutorial(stage?: number): void;
+  /** Tutorial done flag and the first-time tips already shown. */
+  tips(): { tutorialDone: boolean; shown: string[] };
+  /** The tip on screen right now. */
+  tip(): string | null;
   /** Records a best-stars result (to unlock the following levels in tests). */
   recordStars(id: string, stars: number): void;
   /** Challenge: objective progress and status of the running challenge (null otherwise). */
@@ -264,6 +281,8 @@ export class GameShell {
     snapshot: null,
     result: null,
     challengeResult: null,
+    tip: null,
+    tutorialRetry: null,
   };
   private readonly listeners = new Set<(s: ShellState) => void>();
   private readonly arenaTex;
@@ -275,6 +294,7 @@ export class GameShell {
   readonly entitlements: MockEntitlements;
   readonly progress: ChallengeProgress;
   readonly daily: DailyStore;
+  readonly tips: TipsStore;
   private dailyCache: { day: number; promise: Promise<DailyChallenge> } | null = null;
   private dailyReady: DailyChallenge | null = null;
   private readonly partyStore: PartyStore;
@@ -306,6 +326,7 @@ export class GameShell {
     this.entitlements = deps.entitlements ?? mockEntitlements(options.plus);
     this.progress = deps.progress ?? new ChallengeProgress(webStore());
     this.daily = deps.daily ?? new DailyStore(webStore());
+    this.tips = deps.tips ?? new TipsStore(webStore());
     this.partyStore = deps.partyStore ?? new PartyStore(webStore());
     this.settings =
       deps.settings ?? new SettingsStore(webStore(), defaultSettings(prefersReducedMotion()));
@@ -462,13 +483,7 @@ export class GameShell {
           speed: speedFactor(this.settings.get().gameSpeed),
           feel: this.sessionFeel(mode),
         },
-        {
-          onSnapshot: (snapshot) => this.set({ snapshot }),
-          onMatchOver: (result) => {
-            this.session?.disableInput();
-            this.toResult(result);
-          },
-        },
+        this.matchCallbacks(),
       ),
     );
     this.toPlaying();
@@ -491,9 +506,11 @@ export class GameShell {
   private matchCallbacks(): {
     onSnapshot: (snapshot: SessionSnapshot) => void;
     onMatchOver: (result: MatchResult) => void;
+    onTip: (tip: TipId) => void;
   } {
     return {
       onSnapshot: (snapshot) => this.set({ snapshot }),
+      onTip: this.onTip,
       onMatchOver: (result) => {
         this.session?.disableInput();
         this.toResult(result);
@@ -611,6 +628,7 @@ export class GameShell {
         },
         {
           onSnapshot: (snapshot) => this.set({ snapshot }),
+          onTip: this.onTip,
           onChallengeOver: (result) => {
             this.session?.disableInput();
             if (result.won) this.progress.record(result.level.id, result.stars);
@@ -674,6 +692,7 @@ export class GameShell {
         },
         {
           onSnapshot: (snapshot) => this.set({ snapshot }),
+          onTip: this.onTip,
           onChallengeOver: (result) => {
             this.session?.disableInput();
             const record = { won: result.won, stars: result.stars, ticks: result.stats.ticks };
@@ -693,6 +712,65 @@ export class GameShell {
       ),
     );
     this.toPlaying();
+  }
+
+  /** Shows a first-time tip unless it was shown before (persisted). */
+  private readonly onTip = (tip: TipId): void => {
+    if (this.tips.take(tip)) this.set({ tip });
+  };
+
+  /** Hides the tip on screen (after its 3 s). */
+  clearTip(): void {
+    if (this.state.tip !== null) this.set({ tip: null });
+  }
+
+  /**
+   * The tutorial (T5.4): five steps played as one five-stage challenge. A lost step starts over
+   * at that step (`fromStage`); winning the last one marks the tutorial done.
+   */
+  startTutorial(fromStage = 0, retry = false): void {
+    this.last = { kind: 'tutorial' };
+    const tuning = tuningOf(TUTORIAL_ID);
+    const stage = Math.max(0, Math.min(TUTORIAL.stages.length - 1, fromStage));
+    this.replaceSession(
+      new GameSession(
+        this.app,
+        this.arenaTex,
+        this.controlTex,
+        {
+          mode: 'challenge',
+          seed: tuning.seeds[stage] ?? 1,
+          arena: (TUTORIAL.stages[stage] as StageDef).arena,
+          winsToMatch: 1,
+          challenge: { level: TUTORIAL, tuning, startStage: stage },
+          ...this.commonOptions(),
+          feel: this.sessionFeel('challenge'),
+        },
+        {
+          onSnapshot: (snapshot) => this.set({ snapshot }),
+          onTip: this.onTip,
+          onChallengeOver: (result) => {
+            this.session?.disableInput();
+            if (!result.won) {
+              queueMicrotask(() => this.startTutorial(result.stage, true));
+              return;
+            }
+            this.tips.setTutorialDone();
+            this.pacer.setCap(MENU_FPS_CAP);
+            this.audio.menu();
+            this.set({ screen: 'tutorialDone', challengeResult: null });
+          },
+        },
+      ),
+    );
+    this.toPlaying();
+    if (retry) this.set({ tutorialRetry: stage });
+  }
+
+  /** Skips the rest of the tutorial (it counts as done) and goes back to the menu. */
+  skipTutorial(): void {
+    this.tips.setTutorialDone();
+    this.showMenu();
   }
 
   /** The level after the one just played, if it can be played. */
@@ -727,6 +805,9 @@ export class GameShell {
         break;
       case 'daily':
         this.startDaily();
+        break;
+      case 'tutorial':
+        this.startTutorial();
         break;
     }
   }
@@ -790,7 +871,13 @@ export class GameShell {
     this.governor.reset();
     this.workMs = 0;
     this.workFrames = 0;
-    this.set({ screen: 'playing', result: null, challengeResult: null });
+    this.set({
+      screen: 'playing',
+      result: null,
+      challengeResult: null,
+      tip: null,
+      tutorialRetry: null,
+    });
   }
 
   private toResult(result: MatchResult): void {
@@ -885,6 +972,12 @@ export class GameShell {
         };
       },
       startDaily: () => this.startDaily(),
+      startTutorial: (stage) => this.startTutorial(stage ?? 0),
+      tips: () => ({
+        tutorialDone: this.tips.tutorialDone,
+        shown: TIP_IDS.filter((id) => this.tips.seen(id)),
+      }),
+      tip: () => this.state.tip,
       dailySolution: () => {
         const daily = this.preparedDaily();
         if (!daily) throw new Error('daily challenge not prepared');

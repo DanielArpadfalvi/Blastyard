@@ -32,8 +32,16 @@ export interface StageRun {
   readonly reason: string;
 }
 
-/** The bot plays stage `k` of `level` with `seed`; the player's input bytes are recorded. */
-export function botPlay(level: LevelDef, k: number, seed: number): StageRun {
+/**
+ * The bot plays stage `k` of `level` with `seed`; the player's input bytes are recorded. An
+ * `opening` (input bytes from tick 0) is played first, the bot takes over after it.
+ */
+export function botPlay(
+  level: LevelDef,
+  k: number,
+  seed: number,
+  opening: readonly number[] = [],
+): StageRun {
   const single = singleStage(level, k);
   const state = createState(stageSetup(level, k, seed));
   const tracker = new ChallengeTracker(single);
@@ -46,13 +54,17 @@ export function botPlay(level: LevelDef, k: number, seed: number): StageRun {
     (roundTicks > 0 ? roundTicks + 4000 : 7200);
   const inputs = new Uint8Array(MAX_SEATS);
   const bytes: number[] = [];
+  inputs[PLAYER_SEAT] = opening[0] ?? 0;
   let events = step(state, inputs);
-  bytes.push(0);
+  bytes.push(inputs[PLAYER_SEAT] as number);
   tracker.observe(state, events);
   while (tracker.status === 'running' && bytes.length < cap) {
-    setBotLevel(state, PLAYER_SEAT, BotLevel.EXPERT);
-    const input = botInput(state, PLAYER_SEAT);
-    setBotLevel(state, PLAYER_SEAT, BotLevel.NONE);
+    let input = opening[bytes.length];
+    if (input === undefined) {
+      setBotLevel(state, PLAYER_SEAT, BotLevel.EXPERT);
+      input = botInput(state, PLAYER_SEAT);
+      setBotLevel(state, PLAYER_SEAT, BotLevel.NONE);
+    }
     inputs[PLAYER_SEAT] = input;
     bytes.push(input);
     events = step(state, inputs);

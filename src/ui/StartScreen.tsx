@@ -16,6 +16,9 @@ export interface StartScreenProps {
   /** Daily challenge card (T5.3) and the current streak. */
   onDaily?: () => void;
   dailyStreak?: number;
+  /** Tutorial (T5.4); `tutorialDone` = finished or skipped (otherwise it is highlighted). */
+  onTutorial?: () => void;
+  tutorialDone?: boolean;
   /** Bot level of Quick Match and its change handler. */
   quickLevel?: number;
   onQuickLevel?: (level: number) => void;
@@ -27,7 +30,7 @@ export interface StartScreenProps {
   onSettings?: () => void;
 }
 
-/** Minimal start screen: Quick Match, Party, Challenges, Daily and the first-playable modes. */
+/** Start screen: Quick Match, Party, Challenges, Daily, Tutorial and the first-playable modes. */
 export function StartScreen({
   onStart,
   onParty,
@@ -35,6 +38,8 @@ export function StartScreen({
   onChallenges,
   onDaily,
   dailyStreak = 0,
+  onTutorial,
+  tutorialDone = true,
   quickLevel = BotLevel.NORMAL,
   onQuickLevel,
   spike = false,
@@ -112,6 +117,22 @@ export function StartScreen({
           )}
         </div>
         <div class="mode-buttons mode-buttons-minor">
+          {onTutorial && (
+            <button
+              type="button"
+              class={
+                tutorialDone ? 'mode-button secondary compact' : 'mode-button compact mode-new'
+              }
+              data-testid="start-tutorial"
+              data-done={tutorialDone}
+              onClick={onTutorial}
+            >
+              <span class="mode-name">{t('modeTutorial')}</span>
+              <span class="mode-hint">
+                {tutorialDone ? t('modeTutorialHint') : t('modeTutorialNew')}
+              </span>
+            </button>
+          )}
           <button
             type="button"
             class="mode-button secondary compact"

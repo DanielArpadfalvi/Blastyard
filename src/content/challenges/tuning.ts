@@ -231,4 +231,11 @@ export const TUNING: Readonly<Record<string, LevelTuning>> = {
       { kind: 'bombs', max: 45 },
     ],
   },
+  tutorial: {
+    seeds: [0, 100, 200, 300, 402],
+    stars: [
+      { kind: 'time', seconds: 140 },
+      { kind: 'bombs', max: 21 },
+    ],
+  },
 };

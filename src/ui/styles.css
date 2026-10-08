@@ -1189,3 +1189,81 @@ body {
   align-items: center;
   margin-bottom: 0.4rem;
 }
+
+/* Tutorial and first-time tips (T5.4) */
+.tutorial-hint {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.4rem 0.8rem 0.5rem;
+  border-radius: 0.9rem;
+  background: rgba(16, 26, 18, 0.82);
+  color: #f4f1e6;
+  text-align: center;
+  font-size: clamp(0.8rem, 2.3vh, 1.05rem);
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.tutorial-step {
+  font-size: 0.8em;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.tutorial-step b {
+  color: #ffd23f;
+}
+
+.tutorial-skip {
+  position: absolute;
+  transform: translateY(-50%);
+  pointer-events: auto;
+  padding: 0.15rem 0.8rem;
+  border: 2px solid #2b2118;
+  border-radius: 0.7rem;
+  background: rgba(244, 241, 230, 0.85);
+  color: #2b2118;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 800;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.tip-banner {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 0.45rem 1rem;
+  border-radius: 0.9rem;
+  background: #ffb627;
+  color: #2b2118;
+  font-weight: 800;
+  font-size: clamp(0.85rem, 2.4vh, 1.1rem);
+  text-align: center;
+  box-shadow: 0 0.2rem 0 #2b2118;
+  pointer-events: none;
+  width: max-content;
+  animation: tip-in 0.25s ease-out;
+}
+
+@keyframes tip-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -30%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tip-banner {
+    animation: none;
+  }
+}
+
+.mode-button.mode-new {
+  box-shadow: 0 0 0 3px #ffd23f;
+}

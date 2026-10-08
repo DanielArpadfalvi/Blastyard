@@ -241,6 +241,26 @@ export const en = {
   dailyBadgePractice: 'Practice',
   dailyNewBest: 'New best today!',
   dailyBack: 'Daily',
+  objChain: 'Set off {count} chain reaction within {n} s',
+  hudChain: 'Chain reactions',
+  tutorialTitle: 'Tutorial',
+  modeTutorial: 'Tutorial',
+  modeTutorialHint: 'The basics in 90 s',
+  modeTutorialNew: 'New here? Start here',
+  tutStep1: 'Drag a finger in a side zone to move (keyboard: arrows / WASD). Walk to the flag!',
+  tutStep2:
+    'Tap to drop a pop (keyboard: Space / Enter), then hide around a corner. Blast every crate!',
+  tutStep3: 'Crates hide power-ups. Blast them open and grab two!',
+  tutStep4: 'Drop a pop in another pop’s flame and they go off together. Set off a chain!',
+  tutStep5: 'Now for real: beat an Easy bot!',
+  tutStepLabel: 'Step {n}/{total}',
+  tutSkip: 'Skip',
+  tutRetry: 'Try that step again!',
+  tutDoneTitle: 'You’re ready!',
+  tutDoneText: 'You know the basics. Jump into a Quick match, or gather friends for a Party.',
+  tipKick: 'Kick: walk into a pop to send it sliding.',
+  tipJinx: 'Jinxed! Touch another player to pass the curse on.',
+  tipSuddenDeath: 'Sudden death: the walls close in – head for the middle!',
 } as const;
 
 export type TranslationKey = keyof typeof en;

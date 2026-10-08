@@ -18,6 +18,7 @@ import {
 import { en } from '../../i18n/en';
 import { hu } from '../../i18n/hu';
 import { ALL_ARENAS } from '../arenas';
+import { TUTORIAL, TUTORIAL_ID, TUTORIAL_STEPS } from '../tutorial';
 import { LEVELS, LEVELS_PER_WORLD, WORLD_COUNT } from './levels';
 import { TUNING } from './tuning';
 
@@ -50,10 +51,14 @@ export function validateLevelStructure(level: LevelDef): ContentIssue[] {
     issues.push({ where: level.id, message });
   };
   if (level.stages.length === 0) bad('no stages');
-  if (level.index === LEVELS_PER_WORLD && level.stages.length < 2)
-    bad('a gauntlet needs 2+ stages');
-  if (level.index !== LEVELS_PER_WORLD && level.stages.length !== 1)
-    bad('only gauntlets have stages');
+  if (level.id === TUTORIAL_ID) {
+    if (level.stages.length !== TUTORIAL_STEPS) bad(`the tutorial needs ${TUTORIAL_STEPS} steps`);
+  } else {
+    if (level.index === LEVELS_PER_WORLD && level.stages.length < 2)
+      bad('a gauntlet needs 2+ stages');
+    if (level.index !== LEVELS_PER_WORLD && level.stages.length !== 1)
+      bad('only gauntlets have stages');
+  }
   if (!(level.nameKey in en) || !(level.nameKey in hu)) bad(`missing level name ${level.nameKey}`);
   level.stages.forEach((stage, k) => {
     const tag = `stage ${k + 1}`;
@@ -84,7 +89,9 @@ export function validateLevelStructure(level: LevelDef): ContentIssue[] {
     }
     if (o.type === 'monsters' && monsters.length === 0)
       bad(`${tag}: monster objective, no monsters`);
-    if (o.type === 'collect' && (o.count ?? 0) < 1) bad(`${tag}: collect needs a count`);
+    if ((o.type === 'collect' || o.type === 'chain') && (o.count ?? 0) < 1) {
+      bad(`${tag}: ${o.type} needs a count`);
+    }
     if ((o.type === 'survive' || o.type === 'collect' || o.type === 'crates') && !o.seconds) {
       bad(`${tag}: ${o.type} needs seconds`);
     }
@@ -164,7 +171,7 @@ export function validateContent(
     });
   }
   const ids = new Set<string>();
-  for (const level of LEVELS) {
+  for (const level of [...LEVELS, TUTORIAL]) {
     if (ids.has(level.id)) issues.push({ where: level.id, message: 'duplicate level id' });
     ids.add(level.id);
     const found = [

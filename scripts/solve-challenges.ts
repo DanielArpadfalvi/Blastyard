@@ -17,6 +17,7 @@ import { rleEncode, type InputRLE } from '../src/core';
 import { replayLevel, type LevelDef, type RunStats, type StarCond } from '../src/game/challenge';
 import { botPlay, qualifies, starsFromRun } from '../src/game/solver';
 import { LEVELS } from '../src/content/challenges/levels';
+import { TUTORIAL, chainOpening } from '../src/content/tutorial';
 
 interface Args {
   level: string | null;
@@ -54,7 +55,8 @@ function solveLevel(level: LevelDef, args: Args): Solved | null {
     const tally: string[] = [];
     for (let attempt = 0; attempt < args.tries && !found; attempt++) {
       const seed = base + attempt;
-      const run = botPlay(level, k, seed);
+      const opening = level.stages[k]!.objective.type === 'chain' ? chainOpening() : [];
+      const run = botPlay(level, k, seed, opening);
       const secs = (run.stats.ticks / 60).toFixed(0);
       tally.push(`${run.reason}${run.won ? `@${secs}s` : ''}`);
       if (args.probe) {
@@ -119,7 +121,7 @@ function fmtCond(c: StarCond): string {
 
 export function main(argv: string[]): number {
   const args = parseArgs(argv);
-  const levels = LEVELS.filter((l) => args.level === null || l.id === args.level);
+  const levels = [...LEVELS, TUTORIAL].filter((l) => args.level === null || l.id === args.level);
   const solved = new Map<string, Solved>();
   let failures = 0;
   const started = Date.now();

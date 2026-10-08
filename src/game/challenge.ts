@@ -10,6 +10,7 @@
  * - `survive`: stay alive for `seconds` (or beat the bots sooner)
  * - `win`: be the last one standing against the bots
  * - `collect`: pick up `count` power-ups within `seconds`
+ * - `chain`: set off `count` chain reactions (one of your pops sets off another; tutorial, T5.4)
  *
  * The {@link ChallengeTracker} watches a running state (and its events) and decides when a stage
  * is won or lost; it is pure, so the game session and the headless content validator
@@ -41,13 +42,14 @@ import {
   type SimState,
 } from '../core';
 
-export type ObjectiveType = 'crates' | 'monsters' | 'flag' | 'survive' | 'win' | 'collect';
+export type ObjectiveType =
+  'crates' | 'monsters' | 'flag' | 'survive' | 'win' | 'collect' | 'chain';
 
 export interface Objective {
   readonly type: ObjectiveType;
   /** Time limit in seconds (`survive`: how long to stay alive). */
   readonly seconds?: number;
-  /** `collect`: power-ups to pick up. */
+  /** `collect`: power-ups to pick up; `chain`: chain reactions to set off. */
   readonly count?: number;
 }
 
@@ -104,6 +106,13 @@ export interface LevelSolution {
 }
 
 export const PLAYER_SEAT = 0;
+
+/**
+ * Two of the player's pops going off at most this many ticks apart count as a chain reaction:
+ * a chained pop explodes 4 ticks after the flame reaches it, while two pops placed by hand go off
+ * at least a tile's walk (16 ticks) apart.
+ */
+export const CHAIN_WINDOW = 8;
 
 /** What a (partial) run measured; the star conditions are evaluated on it. */
 export interface RunStats {
@@ -203,8 +212,16 @@ export class ChallengeTracker {
   private stageDone = false;
   private reason: LossReason | null = null;
   private lastTicks = 0;
+  private lastBlast = -1_000_000;
+  private chains = 0;
 
-  constructor(readonly level: LevelDef) {}
+  /** `startStage`: begin at this stage (the tutorial resumes at the step that was lost). */
+  constructor(
+    readonly level: LevelDef,
+    startStage = 0,
+  ) {
+    this.stageIndex = startStage;
+  }
 
   get stage(): number {
     return this.stageIndex;
@@ -240,6 +257,8 @@ export class ChallengeTracker {
     this.stageDone = false;
     this.startTick = -1;
     this.cratesAtStart = -1;
+    this.lastBlast = -1_000_000;
+    this.chains = 0;
   }
 
   /** Playing ticks of the running stage. */
@@ -259,6 +278,12 @@ export class ChallengeTracker {
           break;
         case EventKind.BOMB_PLACED:
           if (e.seat === PLAYER_SEAT) bombs++;
+          break;
+        case EventKind.BOMB_EXPLODED:
+          if (e.seat === PLAYER_SEAT) {
+            if (e.tick - this.lastBlast <= CHAIN_WINDOW) this.chains++;
+            this.lastBlast = e.tick;
+          }
           break;
         case EventKind.PICKUP_COLLECTED:
           if (e.seat === PLAYER_SEAT) pickups++;
@@ -308,6 +333,9 @@ export class ChallengeTracker {
       case 'collect':
         met = pickups >= (objective.count ?? 1);
         break;
+      case 'chain':
+        met = this.chains >= (objective.count ?? 1);
+        break;
     }
     if (met) {
       if (this.stageIndex >= this.level.stages.length - 1) this.state = 'won';
@@ -346,6 +374,10 @@ export class ChallengeTracker {
       case 'collect':
         target = objective.count ?? 1;
         done = Math.min(target, this.current.pickups);
+        break;
+      case 'chain':
+        target = objective.count ?? 1;
+        done = Math.min(target, this.chains);
         break;
       default:
         done = this.stageDone || this.state === 'won' ? 1 : 0;

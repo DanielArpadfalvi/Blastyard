@@ -7,6 +7,8 @@ import { onLanguageChange, t } from '../i18n';
 import { ChallengeMap } from './ChallengeMap';
 import { ChallengeResultScreen } from './ChallengeResult';
 import { DailyScreen } from './DailyScreen';
+import { TipBanner, TutorialDone, TutorialHint } from './Tutorial';
+import { TUTORIAL_ID } from '../content/tutorial';
 import { Hud } from './Hud';
 import { PartySetup } from './PartySetup';
 import { PauseOverlay } from './PauseOverlay';
@@ -28,6 +30,7 @@ type MenuView = 'start' | 'party' | 'challenges' | 'daily';
 
 /** Where "leave" from a paused match goes back to. */
 function leaveView(snapshot: SessionSnapshot | null): MenuView {
+  if (snapshot?.challenge?.levelId === TUTORIAL_ID) return 'start';
   if (snapshot?.mode !== 'challenge') return 'start';
   return snapshot.challenge && isDailyLevel({ id: snapshot.challenge.levelId })
     ? 'daily'
@@ -98,6 +101,8 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
           onChallenges={() => setMenuView('challenges')}
           onDaily={() => setMenuView('daily')}
           dailyStreak={shell.daily.view(shell.today()).streak}
+          onTutorial={() => shell.startTutorial()}
+          tutorialDone={shell.tips.tutorialDone}
           quickLevel={stored?.quickLevel}
           onQuickLevel={(level) => {
             if (stored) shell.setParty({ ...stored, quickLevel: level });
@@ -157,6 +162,25 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
             onLeave={() => toMenu('party')}
           />
         )}
+      {shell &&
+        screen === 'playing' &&
+        state?.snapshot?.challenge?.levelId === TUTORIAL_ID &&
+        !paused && (
+          <TutorialHint
+            snapshot={state.snapshot}
+            retry={state.tutorialRetry === state.snapshot.challenge.progress.stage - 1}
+            onSkip={() => {
+              shell.skipTutorial();
+              setMenuView('start');
+            }}
+          />
+        )}
+      {shell && screen === 'playing' && state?.tip && state.snapshot && (
+        <TipBanner tip={state.tip} snapshot={state.snapshot} onDone={() => shell.clearTip()} />
+      )}
+      {shell && screen === 'tutorialDone' && (
+        <TutorialDone onQuick={() => shell.startQuick()} onMenu={() => toMenu()} />
+      )}
       {shell && screen === 'playing' && paused && (
         <PauseOverlay
           onResume={() => shell.setPaused(false)}

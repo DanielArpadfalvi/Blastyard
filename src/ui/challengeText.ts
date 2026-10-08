@@ -16,6 +16,8 @@ export function objectiveText(o: Objective): string {
       return t('objWin');
     case 'collect':
       return t('objCollect', { count: o.count ?? 1, n: o.seconds ?? 0 });
+    case 'chain':
+      return t('objChain', { count: o.count ?? 1, n: o.seconds ?? 0 });
   }
 }
 

@@ -19,7 +19,7 @@ export function main(): number {
     return 1;
   }
   console.log(
-    `content ok: ${ALL_ARENAS.length} arenas, ${LEVELS.length} challenge levels replayed ` +
+    `content ok: ${ALL_ARENAS.length} arenas, ${LEVELS.length} challenge levels + the tutorial replayed ` +
       `(SIM_VERSION ${SIM_VERSION}, ${Date.now() - started} ms)`,
   );
   return 0;

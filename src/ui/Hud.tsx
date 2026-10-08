@@ -299,6 +299,7 @@ const OBJECTIVE_KEY: Record<string, TranslationKey> = {
   survive: 'hudSurvive',
   win: 'hudWin',
   collect: 'hudCollect',
+  chain: 'hudChain',
 };
 
 function ChallengeBar(props: { challenge: ChallengeHud; x: number; y: number }) {
