@@ -1773,7 +1773,11 @@ html.large-text {
 
 /* ------------------------------------------------------------------ start screen (redesign) */
 .start-card {
-  width: min(60rem, 94vw);
+  width: min(72rem, 94vw);
+}
+
+.start-grid .mode-button.tile:not(.hero) .mode-name {
+  font-size: clamp(1rem, 3vh, 1.45rem);
 }
 
 .start-grid {
