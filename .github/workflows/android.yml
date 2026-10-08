@@ -1,8 +1,11 @@
 name: Android
 
 on:
+  # Every push (any branch) builds; the newest debug APK also replaces the one in the owner's
+  # Google Drive folder. Docs-only pushes change nothing in the app.
   push:
-    branches: [main]
+    branches: ['**']
+    paths-ignore: ['docs/**', '**/*.md']
   workflow_dispatch:
 
 permissions:
@@ -58,3 +61,19 @@ jobs:
             --prerelease --target "${{ github.sha }}" \
             --title "Blastyard debug APK (${{ env.VERSION_NAME }})" \
             --notes "Automatic test build from ${{ github.ref_name }} @ ${{ github.sha }}. Not for store upload."
+      # Owner's Drive folder "Mobile games": always one file, overwritten by the newest build.
+      # Needs the secret GDRIVE_SERVICE_ACCOUNT_JSON (or GDRIVE_CLIENT_ID / GDRIVE_CLIENT_SECRET /
+      # GDRIVE_REFRESH_TOKEN); skipped with a warning until it is set. See docs/RELEASE-drive.md.
+      - name: Upload the debug APK to Google Drive (replaces the previous one)
+        env:
+          GDRIVE_FOLDER_ID: ${{ vars.GDRIVE_FOLDER_ID || '1zTqiGB7KHX0puHztEt7Ol2hCYDxPv1uk' }}
+          GDRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_JSON }}
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+        run: |
+          if [ -z "$GDRIVE_SERVICE_ACCOUNT_JSON" ] && [ -z "$GDRIVE_REFRESH_TOKEN" ]; then
+            echo "::warning::Google Drive upload skipped: no GDRIVE_* secret (docs/RELEASE-drive.md)"
+            exit 0
+          fi
+          node scripts/drive-upload.mjs blastyard-debug-*.apk Blastyard-debug.apk

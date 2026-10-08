@@ -69,6 +69,8 @@ every finished task (rule in `CLAUDE.md`).
   solutions run on the default rules).
 
 ### Native builds
+- `android.yml` runs on every push (any branch, docs-only excepted) and overwrites
+  `Blastyard-debug.apk` in the owner's Drive folder "Mobile games" (`scripts/drive-upload.mjs`).
 - Not possible in this container (dl.google.com blocked, no macOS). Verify in GitHub Actions:
   `android.yml` can be started on any branch (workflow_dispatch); `ios.yml` runs on push when
   iOS inputs change (workflow_dispatch only works once the file is on main).
@@ -76,6 +78,8 @@ every finished task (rule in `CLAUDE.md`).
   (regenerates `capacitor.settings.gradle`, `CapApp-SPM/Package.swift`, `ios/app-id.xcconfig`).
 
 ### Open owner tasks
+- Google Drive APK upload: set the `GDRIVE_SERVICE_ACCOUNT_JSON` secret (steps in
+  `docs/RELEASE-drive.md`). Until then the Android workflow skips the upload with a warning.
 - Decide how the CI perf spec should run (see above).
 - T2.4 device touch spike (`docs/touch-spike.md` §1–3) and the gamepad device check (§4).
 - T7.3: install the debug APK (artifact `blastyard-debug-apk`, or the `android-debug-latest`
