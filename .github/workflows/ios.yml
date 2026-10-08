@@ -34,7 +34,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # RevenueCat public SDK key (owner secret). Without it the app says "store unavailable"
+      # and never unlocks anything (T8.1).
       - run: npx vite build
+        env:
+          VITE_REVENUECAT_IOS_KEY: ${{ secrets.VITE_REVENUECAT_IOS_KEY }}
       # Also writes ios/app-id.xcconfig (bundle id) through the capacitor:sync:after hook.
       - run: npx cap sync ios
       - name: Show Xcode version

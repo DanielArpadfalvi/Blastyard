@@ -1,3 +1,4 @@
+import type { ComponentChildren } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import type { MatchResult } from '../game/session';
 import { t } from '../i18n';
@@ -12,6 +13,8 @@ export function ResultScreen(props: {
   result: MatchResult;
   onAgain: () => void;
   onMenu: () => void;
+  /** Shown under the buttons (the one-off Blastyard+ card). */
+  children?: ComponentChildren;
 }) {
   const { result, onAgain, onMenu } = props;
   const again = useRef<HTMLButtonElement>(null);
@@ -87,6 +90,7 @@ export function ResultScreen(props: {
             <span class="mode-name">{t('backToMenu')}</span>
           </button>
         </div>
+        {props.children}
       </div>
     </div>
   );

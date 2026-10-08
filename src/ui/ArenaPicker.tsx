@@ -16,12 +16,15 @@ export function ArenaPicker(props: {
   hasPlus: boolean;
   onSelect: (id: string) => void;
   onClose: () => void;
+  /** A locked arena was tapped: show the paywall. */
+  onLocked?: () => void;
 }) {
-  const { selected, hasPlus, onSelect, onClose } = props;
+  const { selected, hasPlus, onSelect, onClose, onLocked } = props;
   const [hint, setHint] = useState(false);
   const pick = (arena: ArenaDef): void => {
     if (!arenaUnlocked(arena, hasPlus)) {
       setHint(true);
+      onLocked?.();
       return;
     }
     setHint(false);
@@ -61,7 +64,7 @@ export function ArenaPicker(props: {
                 type="button"
                 class={cls}
                 data-testid={`arena-${arena.id}`}
-                aria-disabled={locked}
+                aria-disabled={locked && !onLocked}
                 onClick={() => pick(arena)}
               >
                 <ArenaThumb arena={arena} />

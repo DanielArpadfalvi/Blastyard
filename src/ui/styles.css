@@ -1551,3 +1551,99 @@ html.large-text {
   flex-shrink: 1;
   min-height: 7.5rem;
 }
+
+/* ------------------------------------------------------------------ purchases (T8.1) */
+
+.paywall-screen,
+.custom-screen {
+  z-index: 5;
+  background: rgba(16, 26, 18, 0.82);
+}
+
+.paywall-card,
+.custom-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  width: min(36rem, 94vw);
+  max-height: 94vh;
+  overflow-y: auto;
+  text-align: left;
+}
+
+.paywall-card > *,
+.custom-card > * {
+  flex-shrink: 0;
+}
+
+.paywall-tagline {
+  margin: 0;
+  font-weight: 700;
+  text-align: center;
+}
+
+.paywall-features {
+  margin: 0.2rem 0;
+  padding-left: 1.3rem;
+  line-height: 1.35;
+}
+
+.paywall-features li::marker {
+  color: #ffd23f;
+}
+
+.paywall-subtitle {
+  margin: 0.4rem 0 0;
+  font-size: 1.05rem;
+  color: #ffd23f;
+}
+
+.paywall-supporter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.paywall-owned {
+  margin: 0;
+  font-weight: 800;
+  color: #8fe388;
+}
+
+.paywall-status {
+  min-height: 1.2em;
+}
+
+.plus-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.6rem;
+  padding: 0.7rem 0.9rem;
+  border: 2px solid rgba(255, 210, 63, 0.6);
+  border-radius: 0.8rem;
+  background: rgba(255, 210, 63, 0.08);
+  text-align: left;
+}
+
+.plus-card-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.custom-power {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.custom-power .segmented {
+  flex-wrap: wrap;
+}
+
+.custom-warning {
+  color: #ffb36b;
+}

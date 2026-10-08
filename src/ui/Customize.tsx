@@ -4,6 +4,7 @@ import {
   POP_SKINS,
   PUFFS,
   TRAILS,
+  tierOf,
   type Appearance,
   type CosmeticItem,
   type TrailDef,
@@ -51,6 +52,8 @@ function unlockText(unlock: Unlock, ctx: ProgressContext): string {
   switch (unlock.kind) {
     case 'plus':
       return t('unlockPlus');
+    case 'supporter':
+      return t('unlockSupporter');
     case 'matches':
       return t('unlockMatches', { n: p.need, have: p.have });
     case 'wins':
@@ -121,8 +124,10 @@ export function Customize(props: {
   favouriteArena: string | null;
   thumbnail: (kind: 'puff' | 'hat' | 'pop', id: string, seat: number) => Promise<string>;
   onBack: () => void;
+  /** A Blastyard+ / Supporter item was tapped while locked: show the paywall. */
+  onLocked?: () => void;
 }) {
-  const { looks, progress, trophies, stats, thumbnail, onBack } = props;
+  const { looks, progress, trophies, stats, thumbnail, onBack, onLocked } = props;
   const [tab, setTab] = useState<'looks' | 'trophies'>('looks');
   const [seat, setSeat] = useState(0);
   const [category, setCategory] = useState<Category>('puff');
@@ -188,6 +193,8 @@ export function Customize(props: {
               {ITEMS[category].map((item) => {
                 const open = isUnlocked(item, progress);
                 const on = current === item.id;
+                // Paid items open the paywall; milestone items just show what is missing.
+                const buyable = !open && tierOf(item) !== 'free' && onLocked !== undefined;
                 return (
                   <button
                     key={item.id}
@@ -196,9 +203,11 @@ export function Customize(props: {
                     data-testid={`item-${item.id}`}
                     data-locked={!open}
                     aria-pressed={on}
-                    disabled={!open}
+                    disabled={!open && !buyable}
                     title={open ? itemName(category, item.id) : unlockText(item.unlock, progress)}
-                    onClick={() => looks.set(seat, { [FIELD[category]]: item.id })}
+                    onClick={() =>
+                      open ? looks.set(seat, { [FIELD[category]]: item.id }) : onLocked?.()
+                    }
                   >
                     <Thumb category={category} id={item.id} seat={seat} thumbnail={thumbnail} />
                     <span class="item-name">{itemName(category, item.id)}</span>

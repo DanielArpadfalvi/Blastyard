@@ -33,7 +33,11 @@ jobs:
           java-version: 21
       - uses: gradle/actions/setup-gradle@v5
       - run: npm ci
+      # RevenueCat public SDK key (owner secret). Without it the app says "store unavailable"
+      # and never unlocks anything (T8.1).
       - run: npx vite build
+        env:
+          VITE_REVENUECAT_ANDROID_KEY: ${{ secrets.VITE_REVENUECAT_ANDROID_KEY }}
       - run: npx cap sync android
       - name: Build debug APK and release bundle (unsigned AAB)
         working-directory: android

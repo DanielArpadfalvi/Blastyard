@@ -124,6 +124,7 @@ describe('first-time tips', () => {
     expect(sanitizeTips({ tutorialDone: 'yes', shown: ['kick', 'boom', 3] })).toEqual({
       tutorialDone: false,
       shown: ['kick'],
+      notices: [],
     });
   });
 });

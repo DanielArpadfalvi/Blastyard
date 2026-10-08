@@ -6,8 +6,17 @@
 
 const SITE = 'https://danielarpadfalvi.github.io/Blastyard/site';
 
+export const SITE_URL = SITE;
 export const PRIVACY_URL = `${SITE}/privacy.html`;
 export const SUPPORT_URL = `${SITE}/support.html`;
+export const TERMS_URL = `${SITE}/terms.html`;
+
+export type SitePage = 'privacy' | 'terms' | 'support';
+
+/** A page of the site (T9.3, `scripts/site.ts`) in the app's language. */
+export function siteUrl(page: SitePage, lang: string): string {
+  return `${SITE}/${page}${lang === 'hu' ? '-hu' : ''}.html`;
+}
 
 export function openExternal(url: string): void {
   try {

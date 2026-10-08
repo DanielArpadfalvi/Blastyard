@@ -1,6 +1,6 @@
 /**
- * Cosmetic catalogue (T4.4, PLAN §1.8–§1.9): 12 Puffs (8 free, 4 Blastyard+), 18 hats, 9 pop skins
- * and 6 trails, all defined as code data – the renderer draws every item procedurally from these
+ * Cosmetic catalogue (T4.4, PLAN §1.8–§1.9): 12 Puffs (8 free, 4 Blastyard+), 19 hats, 9 pop skins
+ * and 7 trails (one hat and one trail from the Supporter pack), all defined as code data – the renderer draws every item procedurally from these
  * records (`src/render/cosmetics.ts`). Cosmetics never change stats. There is no currency: free
  * items are unlocked by milestones (matches, wins, stars, daily streak), Plus items by Blastyard+.
  *
@@ -8,12 +8,13 @@
  * those are fixed per seat and live here as `SEAT_BADGES`.
  */
 
-export type Tier = 'free' | 'plus';
+export type Tier = 'free' | 'plus' | 'supporter';
 
 /** How a free item is earned. */
 export type Unlock =
   | { readonly kind: 'start' }
   | { readonly kind: 'plus' }
+  | { readonly kind: 'supporter' }
   | { readonly kind: 'matches' | 'wins' | 'stars' | 'streak'; readonly n: number };
 
 export interface CosmeticItem {
@@ -23,9 +24,12 @@ export interface CosmeticItem {
 
 export const START: Unlock = { kind: 'start' };
 export const PLUS: Unlock = { kind: 'plus' };
+/** The optional Supporter pack (T8.1): cosmetic thanks, nothing else. */
+export const SUPPORTER: Unlock = { kind: 'supporter' };
 
 export function tierOf(item: CosmeticItem): Tier {
-  return item.unlock.kind === 'plus' ? 'plus' : 'free';
+  const kind = item.unlock.kind;
+  return kind === 'plus' || kind === 'supporter' ? kind : 'free';
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -167,6 +171,7 @@ export const HATS: readonly HatDef[] = [
   { id: 'halo', shape: 'halo', color: 0xfff1a8, accent: 0xffc83d, unlock: PLUS },
   { id: 'pirate', shape: 'pirate', color: 0x2b2b35, accent: 0xf4f1e8, unlock: PLUS },
   { id: 'laurel', shape: 'laurel', color: 0x5fb04a, accent: 0xffd23f, unlock: PLUS },
+  { id: 'goldcrown', shape: 'crown', color: 0xffe14d, accent: 0x8a3ffc, unlock: SUPPORTER },
 ];
 
 // ---------------------------------------------------------------------------------------------
@@ -291,6 +296,14 @@ export const TRAILS: readonly TrailDef[] = [
     interval: 3,
     life: 30,
     unlock: PLUS,
+  },
+  {
+    id: 'confetti',
+    particle: 'confetti',
+    tints: [0xffe14d, 0xff5fa2, 0xffffff, 0x8a3ffc, 0x2ec4b6],
+    interval: 2,
+    life: 36,
+    unlock: SUPPORTER,
   },
 ];
 

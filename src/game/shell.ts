@@ -12,7 +12,9 @@
  *   `bots=0–3`         bot seats in the four-corner prototype (default 0)
  *   `speed=70|85|100`  game speed for this session (default: settings)
  *   `motion=reduced|full`  reduced motion for this session (default: settings / OS)
- *   `plus`             pretend Blastyard+ is owned (mock entitlement, T5.1/T5.2; real purchases: M8)
+ *   `plus` / `supporter`  pretend Blastyard+ / the Supporter pack is owned (web mock store)
+ *   `store=mock|none|pending|cancelled|failed`  web mock store (default: `mock` with `test`,
+ *                      else `none`); natively RevenueCat (T8.1)
  *   `date=YYYY-MM-DD`  the daily challenge of that date instead of today's (T5.3)
  *
  * The shell also owns the game feel (T3.2/T3.3): settings, audio (unlocked by the first user
@@ -48,7 +50,8 @@ import {
   type Clock,
 } from '../platform/clock';
 import { deviceLanguage, setLanguage } from '../i18n';
-import { mockEntitlements, type MockEntitlements } from '../platform/entitlement';
+import type { Entitlements, MockEntitlements, MockOutcome } from '../platform/entitlement';
+import { parseStoreChoice, platformEntitlements, type StoreChoice } from '../platform/store';
 import { onAppVisibility } from '../platform/lifecycle';
 import { platformBack, type BackPort } from '../platform/back';
 import { platformSystem, type SystemPort, type SystemState } from '../platform/system';
@@ -85,7 +88,7 @@ import type { HudModel } from './hud';
 import { gestureBands, type ControlPrefs } from './modes';
 import type { LobbySeatView } from './lobby';
 import { MAX_CORNER_BOTS, type GameMode } from './modes';
-import { DEFAULT_PARTY, pickArena, resolveParty, type PartyConfig } from './party';
+import { DEFAULT_PARTY, partyArena, pickArena, resolveParty, type PartyConfig } from './party';
 import { PartyStore, type StoredParty } from './partyStore';
 import {
   GameSession,
@@ -120,7 +123,12 @@ export interface ShellState {
   readonly tip: TipId | null;
   /** Tutorial: index of the step being retried after a lost attempt (null = none). */
   readonly tutorialRetry: number | null;
+  /** Show the one-off Blastyard+ card under this result (T8.1). */
+  readonly plusHint?: boolean;
 }
+
+/** The Blastyard+ card shows once, after this many finished matches (PLAN §2). */
+export const PLUS_HINT_AFTER = 5;
 
 /** What "play again" repeats. */
 type LastStart =
@@ -141,6 +149,10 @@ export interface ShellOptions {
   readonly bots: number;
   /** Mock Blastyard+ entitlement (`?plus`). */
   readonly plus: boolean;
+  /** Mock Supporter entitlement (`?supporter`). */
+  readonly supporter?: boolean;
+  /** Web mock store (`?store=`). */
+  readonly store?: StoreChoice | null;
   /** Session overrides (not saved). */
   readonly speed: GameSpeed | null;
   readonly reducedMotion: boolean | null;
@@ -154,7 +166,7 @@ export interface ShellOptions {
 /** Injectable feel dependencies (tests); defaults are the web platform implementations. */
 export interface ShellDeps {
   readonly settings?: SettingsStore;
-  readonly entitlements?: MockEntitlements;
+  readonly entitlements?: Entitlements;
   readonly progress?: ChallengeProgress;
   readonly daily?: DailyStore;
   readonly tips?: TipsStore;
@@ -191,8 +203,16 @@ export interface GameTestHook {
   paused(): boolean;
   /** Pauses / resumes the running match. */
   setPaused(paused: boolean): void;
-  /** Mock entitlement: own Blastyard+ (or not). */
+  /** Mock store: own Blastyard+ (or not). */
   setPlus(plus: boolean): void;
+  /** Mock store: own the Supporter pack (or not). */
+  setSupporter(on: boolean): void;
+  /** Mock store: what the next purchases do. */
+  setStoreOutcome(outcome: MockOutcome): void;
+  /** Mock store: the pending payments go through. */
+  completePending(): void;
+  hasSupporter(): boolean;
+  hasPlus(): boolean;
   /** Id of the arena the running session plays on. */
   arena(): string;
   /** Starts challenge level `id` directly (as the map's Play button does). */
@@ -297,6 +317,8 @@ export function parseShellOptions(search: string): ShellOptions {
     seed: intParam(q, 'seed', -0x80000000, 0x7fffffff),
     arena: arenaById(arenaId) ?? null,
     plus: q.has('plus'),
+    supporter: q.has('supporter'),
+    store: parseStoreChoice(q.get('store')),
     winsToMatch: intParam(q, 'wins', 1, 5) ?? 3,
     bots: intParam(q, 'bots', 0, MAX_CORNER_BOTS) ?? 0,
     speed: GAME_SPEEDS.find((v) => String(v) === q.get('speed')) ?? null,
@@ -323,7 +345,7 @@ export class GameShell {
   private attractSeed = 0;
   private bots: number;
   private last: LastStart | null = null;
-  readonly entitlements: MockEntitlements;
+  readonly entitlements: Entitlements;
   readonly progress: ChallengeProgress;
   readonly daily: DailyStore;
   readonly tips: TipsStore;
@@ -368,7 +390,14 @@ export class GameShell {
     this.baseResolution = app.renderer.resolution;
     this.clock = options.clock ?? systemClock;
     this.bots = options.bots;
-    this.entitlements = deps.entitlements ?? mockEntitlements(options.plus);
+    this.entitlements =
+      deps.entitlements ??
+      platformEntitlements({
+        test: options.test,
+        plus: options.plus,
+        supporter: options.supporter ?? false,
+        store: options.store ?? null,
+      });
     // One versioned save document for every persisted part (T6.2).
     const save = deps.save ?? new SaveStore(webStore());
     this.save = save;
@@ -428,6 +457,12 @@ export class GameShell {
   }
 
   /** Does the player own Blastyard+ (mock until M8)? */
+  /** The web mock store, when this build uses it (test hook). */
+  private mockStore(): MockEntitlements | null {
+    const e = this.entitlements as Partial<MockEntitlements>;
+    return typeof e.setOutcome === 'function' ? (e as MockEntitlements) : null;
+  }
+
   hasPlus(): boolean {
     return this.entitlements.hasPlus();
   }
@@ -459,6 +494,7 @@ export class GameShell {
       stars: this.progress.totalStars(),
       bestStreak: this.daily.view(this.today()).bestStreak,
       hasPlus: this.hasPlus(),
+      hasSupporter: this.entitlements.hasSupporter(),
     };
   }
 
@@ -680,8 +716,12 @@ export class GameShell {
   startLobby(config: PartyConfig): void {
     this.last = { kind: 'party', config };
     const seed = this.nextSeed();
-    const arena = this.options.arena ?? pickArena(config, this.hasPlus(), seed);
-    const party = resolveParty(config);
+    const arena = partyArena(
+      this.options.arena ?? pickArena(config, this.hasPlus(), seed),
+      config,
+      this.hasPlus(),
+    );
+    const party = resolveParty(config, this.hasPlus());
     const humans = party.seats.filter((p) => p.kind === 'human').length;
     this.replaceSession(
       new GameSession(
@@ -722,10 +762,15 @@ export class GameShell {
   startPartyMatch(
     config: PartyConfig,
     seed = this.nextSeed(),
-    arena = this.options.arena ?? pickArena(config, this.hasPlus(), seed),
+    // Already custom-weighted when it comes from the lobby.
+    arena = partyArena(
+      this.options.arena ?? pickArena(config, this.hasPlus(), seed),
+      config,
+      this.hasPlus(),
+    ),
   ): void {
     this.last = { kind: 'party', config };
-    const party = resolveParty(config);
+    const party = resolveParty(config, this.hasPlus());
     const humans = party.seats.filter((p) => p.kind === 'human').length;
     this.replaceSession(
       new GameSession(
@@ -1037,13 +1082,18 @@ export class GameShell {
       challengeResult: null,
       tip: null,
       tutorialRetry: null,
+      plusHint: false,
     });
   }
 
   private toResult(result: MatchResult): void {
     this.pacer.setCap(MENU_FPS_CAP);
     this.audio.menu();
-    this.set({ screen: 'result', result });
+    const plusHint =
+      !this.hasPlus() &&
+      this.stats.get().matches >= PLUS_HINT_AFTER &&
+      this.tips.takeNotice('plusHint');
+    this.set({ screen: 'result', result, plusHint });
   }
 
   /** Leaves the current match and shows the start screen over a bot match. */
@@ -1141,7 +1191,12 @@ export class GameShell {
       orientations: () => current().plan.map((p) => p.orientation),
       paused: () => this.session?.paused ?? false,
       setPaused: (paused) => this.setPaused(paused),
-      setPlus: (plus) => this.entitlements.setPlus(plus),
+      setPlus: (plus) => this.mockStore()?.setPlus(plus),
+      setSupporter: (on) => this.mockStore()?.setSupporter(on),
+      setStoreOutcome: (outcome) => this.mockStore()?.setOutcome(outcome),
+      completePending: () => this.mockStore()?.completePending(),
+      hasSupporter: () => this.entitlements.hasSupporter(),
+      hasPlus: () => this.hasPlus(),
       arena: () => current().options.arena.id,
       startChallenge: (id) => this.startChallenge(id),
       prepareDaily: async () => {

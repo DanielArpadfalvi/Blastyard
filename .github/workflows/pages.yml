@@ -47,6 +47,10 @@ jobs:
         env:
           VITE_BASE: /Blastyard/
           VITE_SPIKE: '1'
+      # Privacy / terms / support pages (T9.3) under /Blastyard/site/ – the app links there.
+      - run: npm run site
+        env:
+          SUPPORT_EMAIL: ${{ vars.SUPPORT_EMAIL }}
       - if: steps.pages.outputs.enabled == 'true'
         uses: actions/configure-pages@v5
       - if: steps.pages.outputs.enabled == 'true'

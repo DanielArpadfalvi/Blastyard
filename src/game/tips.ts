@@ -15,6 +15,10 @@ export const TIPS_KEY = 'blastyard.tips.v1';
 export const TIP_IDS = ['kick', 'jinx', 'suddenDeath'] as const;
 export type TipId = (typeof TIP_IDS)[number];
 
+/** One-off notices outside a match (T8.1: the Blastyard+ card after the 5th finished match). */
+export const NOTICE_IDS = ['plusHint'] as const;
+export type NoticeId = (typeof NOTICE_IDS)[number];
+
 /** How long a tip stays on screen (PLAN: one line, 3 s). */
 export const TIP_MS = 3000;
 
@@ -39,6 +43,7 @@ export function tipForEvent(e: SimEvent, humans: readonly number[]): TipId | nul
 interface TipsSave {
   readonly tutorialDone: boolean;
   readonly shown: readonly TipId[];
+  readonly notices?: readonly NoticeId[];
 }
 
 export function sanitizeTips(raw: unknown): TipsSave {
@@ -46,7 +51,10 @@ export function sanitizeTips(raw: unknown): TipsSave {
   const shown = Array.isArray(o.shown)
     ? TIP_IDS.filter((id) => (o.shown as unknown[]).includes(id))
     : [];
-  return { tutorialDone: o.tutorialDone === true, shown };
+  const notices = Array.isArray(o.notices)
+    ? NOTICE_IDS.filter((id) => (o.notices as unknown[]).includes(id))
+    : [];
+  return { tutorialDone: o.tutorialDone === true, shown, notices };
 }
 
 export class TipsStore {
@@ -78,6 +86,14 @@ export class TipsStore {
 
   seen(id: TipId): boolean {
     return this.data.shown.includes(id);
+  }
+
+  /** Marks notice `id` as shown; true only the first time (show it then). */
+  takeNotice(id: NoticeId): boolean {
+    const notices = this.data.notices ?? [];
+    if (notices.includes(id)) return false;
+    this.save({ ...this.data, notices: [...notices, id] });
+    return true;
   }
 
   /** Marks `id` as shown; true only the first time (show it then). */

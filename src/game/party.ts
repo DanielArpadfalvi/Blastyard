@@ -22,9 +22,13 @@ import {
   type Rules,
 } from '../core';
 import { nextOrientation, type SeatOrientation } from '../input/rotation';
+import { DEFAULT_CUSTOM, customArena, customToRules, type CustomRules } from './customRules';
 import type { LayoutKind, SeatKind, SeatPlan } from './modes';
 
 export type PartyLayout = 'faceoff' | 'corners';
+
+/** A free rules preset, or the Blastyard+ custom rules. */
+export type RulesChoice = PresetId | 'custom';
 
 export interface PartySeat {
   readonly kind: SeatKind;
@@ -39,7 +43,9 @@ export interface PartyConfig {
   readonly seats: readonly PartySeat[];
   /** Per seat: a player-chosen orientation (lobby arrow), `null` = the layout default. */
   readonly orientations: readonly (SeatOrientation | null)[];
-  readonly preset: PresetId;
+  readonly preset: RulesChoice;
+  /** The custom rules (edited with Blastyard+; kept, but unused, without it). */
+  readonly custom: CustomRules;
   /** Rounds needed to win the match (1, 3 or 5). */
   readonly winsToMatch: number;
   /** 2v2 (needs all four seats in play). */
@@ -58,6 +64,7 @@ export const DEFAULT_PARTY: PartyConfig = {
   seats: [HUMAN, HUMAN, OFF, OFF],
   orientations: [null, null, null, null],
   preset: 'classic',
+  custom: DEFAULT_CUSTOM,
   winsToMatch: 3,
   teams: false,
   arena: RANDOM_ARENA,
@@ -128,8 +135,29 @@ export function setLayout(config: PartyConfig, layout: PartyLayout): PartyConfig
   return isPlayable(next) ? next : config;
 }
 
-export function setPreset(config: PartyConfig, preset: PresetId): PartyConfig {
+export function setPreset(config: PartyConfig, preset: RulesChoice): PartyConfig {
   return { ...config, preset };
+}
+
+export function setCustom(config: PartyConfig, custom: CustomRules): PartyConfig {
+  return { ...config, preset: 'custom', custom };
+}
+
+/** Are the custom rules in play? Only with Blastyard+ (else the Classic preset). */
+export function usesCustom(config: PartyConfig, hasPlus: boolean): boolean {
+  return config.preset === 'custom' && hasPlus;
+}
+
+/** The core rules of a party: its preset, or the custom rules with Blastyard+. */
+export function partyRules(config: PartyConfig, hasPlus: boolean): Rules {
+  if (usesCustom(config, hasPlus)) return customToRules(config.custom, config.winsToMatch);
+  const preset: PresetId = config.preset === 'custom' ? 'classic' : config.preset;
+  return { ...RULE_PRESETS[preset], winsToMatch: config.winsToMatch };
+}
+
+/** `arena` with the custom power-up frequencies applied (when the custom rules are in play). */
+export function partyArena(arena: ArenaDef, config: PartyConfig, hasPlus: boolean): ArenaDef {
+  return usesCustom(config, hasPlus) ? customArena(arena, config.custom) : arena;
 }
 
 export function setWins(config: PartyConfig, winsToMatch: number): PartyConfig {
@@ -153,7 +181,8 @@ export interface PartyPlan {
   readonly teams: readonly number[] | null;
 }
 
-export function resolveParty(config: PartyConfig): PartyPlan {
+/** `hasPlus`: may the custom rules apply (else a custom setup plays Classic)? */
+export function resolveParty(config: PartyConfig, hasPlus = false): PartyPlan {
   const layout: PartyLayout = config.layout;
   const seats = config.seats.map((s, i) =>
     layout === 'faceoff' && i >= 2 && s.kind === 'human' ? { ...s, kind: 'bot' as const } : s,
@@ -173,7 +202,7 @@ export function resolveParty(config: PartyConfig): PartyPlan {
   return {
     layout: kind,
     seats: plan,
-    rules: { ...RULE_PRESETS[config.preset], winsToMatch: config.winsToMatch },
+    rules: partyRules(config, hasPlus),
     teams,
   };
 }

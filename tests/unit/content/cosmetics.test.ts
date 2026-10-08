@@ -28,14 +28,17 @@ function luminance(rgb: number): number {
 }
 
 describe('cosmetic catalogue', () => {
-  it('has the PLAN counts: 12 Puffs (8 free), 18 hats (12 free), 9 pop skins (6 free), 6 trails', () => {
+  it('has the PLAN counts: 12 Puffs (8 free), 18 hats (12 free) + the Supporter crown, 9 pop skins (6 free), 6 trails + the Supporter confetti', () => {
     expect(PUFFS).toHaveLength(12);
     expect(PUFFS.filter((p) => tierOf(p) === 'free')).toHaveLength(8);
-    expect(HATS).toHaveLength(18);
+    expect(HATS).toHaveLength(19);
+    expect(HATS.filter((h) => tierOf(h) === 'free')).toHaveLength(12);
     expect(HATS.filter((h) => tierOf(h) === 'plus')).toHaveLength(6);
+    expect(HATS.filter((h) => tierOf(h) === 'supporter').map((h) => h.id)).toEqual(['goldcrown']);
     expect(POP_SKINS).toHaveLength(9);
     expect(POP_SKINS.filter((p) => tierOf(p) === 'plus')).toHaveLength(3);
-    expect(TRAILS).toHaveLength(6);
+    expect(TRAILS).toHaveLength(7);
+    expect(TRAILS.filter((t) => tierOf(t) === 'supporter').map((t) => t.id)).toEqual(['confetti']);
   });
 
   it('ids are unique and every Puff / hat has its own shape', () => {
@@ -43,12 +46,21 @@ describe('cosmetic catalogue', () => {
       expect(new Set(ids(list)).size).toBe(list.length);
     }
     expect(new Set(PUFFS.map((p) => p.silhouette)).size).toBe(12);
+    // The Supporter crown is the crown shape in its own colours.
     expect(new Set(HATS.map((h) => h.shape)).size).toBe(18);
   });
 
   it('free items unlock through milestones, never through a currency', () => {
     const kinds = new Set([...PUFFS, ...HATS, ...POP_SKINS, ...TRAILS].map((i) => i.unlock.kind));
-    expect([...kinds].sort()).toEqual(['matches', 'plus', 'stars', 'start', 'streak', 'wins']);
+    expect([...kinds].sort()).toEqual([
+      'matches',
+      'plus',
+      'stars',
+      'start',
+      'streak',
+      'supporter',
+      'wins',
+    ]);
     // Everything is reachable: the four starter Puffs are free from the start.
     expect(PUFFS.slice(0, 4).every((p) => p.unlock.kind === 'start')).toBe(true);
   });

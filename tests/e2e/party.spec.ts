@@ -196,8 +196,11 @@ test('arena picker: twelve arenas, Blastyard+ ones locked by the mock entitlemen
   await expect(cards).toHaveCount(13); // twelve arenas + random
   await expect(page.locator('[data-testid^="lock-"]')).toHaveCount(6);
   await shot(page, 'arena-picker.png');
-  await page.getByTestId('arena-maze').click({ force: true });
+  await page.getByTestId('arena-maze').click();
   await expect(page.getByTestId('plus-hint')).toBeVisible();
+  // A locked arena opens the Blastyard+ paywall (T8.1); closing it keeps the free choice.
+  await expect(page.getByTestId('paywall')).toBeVisible();
+  await page.getByTestId('paywall-close').click();
   await page.getByTestId('arena-rink').click();
   await expect(page.getByTestId('arena-rink')).toHaveClass(/arena-on/);
   await page.getByTestId('arena-close').click();

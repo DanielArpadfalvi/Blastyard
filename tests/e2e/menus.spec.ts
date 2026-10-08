@@ -119,6 +119,27 @@ for (const vp of [
         expect(await back(page)).toBe(true);
         await expect(page.getByTestId('start-screen')).toBeVisible();
       }
+
+      // T8.1: the paywall (from the settings) and the custom rules editor (Blastyard+).
+      await page.getByTestId('open-settings').click();
+      await page.getByTestId('settings-plus').click();
+      await expect(page.getByTestId('paywall-buy')).toBeEnabled();
+      await expectButtonsInside(page, page.getByTestId('paywall'));
+      await expectNoTextOverflow(page.getByTestId('paywall'));
+      await shot(page, `paywall-${tag}.png`);
+      expect(await back(page)).toBe(true);
+      await expect(page.getByTestId('paywall')).toHaveCount(0);
+      expect(await back(page)).toBe(true);
+      await page.evaluate(() => window.__blastyardGame!.setPlus(true));
+      await page.getByTestId('start-party').click();
+      await page.getByTestId('party-preset-custom').click();
+      await expect(page.getByTestId('custom-rules')).toBeVisible();
+      await expectButtonsInside(page, page.getByTestId('custom-rules'));
+      await expectNoTextOverflow(page.getByTestId('custom-rules'));
+      await shot(page, `custom-rules-${tag}.png`);
+      await page.getByTestId('custom-done').click();
+      await page.getByTestId('party-preset-classic').click();
+      expect(await back(page)).toBe(true);
       expect(errors).toEqual([]);
     });
   });

@@ -1,11 +1,13 @@
 import { useState } from 'preact/hooks';
 import { arenaById } from '../content/arenas';
 import { BotLevel, RULE_PRESETS, WINS_TO_MATCH_OPTIONS, type PresetId } from '../core';
+import type { CustomRules } from '../game/customRules';
 import {
   RANDOM_ARENA,
   cycleSeat,
   isPlayable,
   setArena,
+  setCustom,
   setLayout,
   setPreset,
   setTeams,
@@ -13,9 +15,11 @@ import {
   type PartyConfig,
   type PartyLayout,
   type PartySeat,
+  type RulesChoice,
 } from '../game/party';
 import { t, type TranslationKey } from '../i18n';
 import { ArenaPicker, arenaName } from './ArenaPicker';
+import { CustomRulesEditor } from './CustomRules';
 import { Segmented } from './Segmented';
 import { SeatBadge } from './SeatBadge';
 
@@ -26,17 +30,25 @@ const LEVEL_KEY: Record<number, TranslationKey> = {
   [BotLevel.EXPERT]: 'levelExpert',
 };
 
-const PRESET_KEY: Record<PresetId, TranslationKey> = {
+const PRESET_KEY: Record<RulesChoice, TranslationKey> = {
   classic: 'presetClassic',
   fast: 'presetFast',
   chaos: 'presetChaos',
+  custom: 'presetCustom',
 };
 
-const PRESET_HINT: Record<PresetId, TranslationKey> = {
+const PRESET_HINT: Record<RulesChoice, TranslationKey> = {
   classic: 'presetClassicHint',
   fast: 'presetFastHint',
   chaos: 'presetChaosHint',
+  custom: 'presetCustomHint',
 };
+
+/** The free presets, then the Blastyard+ custom rules. */
+const RULE_CHOICES: readonly RulesChoice[] = [
+  ...(Object.keys(RULE_PRESETS) as PresetId[]),
+  'custom',
+];
 
 /** Name of a bot difficulty. */
 export function levelName(level: number): string {
@@ -56,9 +68,20 @@ export function PartySetup(props: {
   onChange: (config: PartyConfig) => void;
   onPlay: (config: PartyConfig) => void;
   onBack: () => void;
+  /** A Blastyard+ choice was tapped without Plus: show the paywall. */
+  onLocked?: () => void;
 }) {
-  const { config, hasPlus, onChange, onPlay, onBack } = props;
+  const { config, hasPlus, onChange, onPlay, onBack, onLocked } = props;
   const [picking, setPicking] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const pickRules = (v: RulesChoice): void => {
+    if (v === 'custom' && !hasPlus) {
+      onLocked?.();
+      return;
+    }
+    onChange(setPreset(config, v));
+    if (v === 'custom') setEditing(true);
+  };
   const full = config.seats.every((s) => s.kind !== 'off');
   const arena = arenaById(config.arena);
   const arenaLabel = arena ? arenaName(arena) : t('arenaRandom');
@@ -96,15 +119,31 @@ export function PartySetup(props: {
         <p class="setting-hint">{t('partySeatsHint')}</p>
         <div class="setting-row">
           <span class="setting-name">{t('partyRules')}</span>
-          <Segmented<PresetId>
+          <Segmented<RulesChoice>
             testId="party-preset"
             value={config.preset}
-            options={Object.keys(RULE_PRESETS) as PresetId[]}
-            label={(v) => t(PRESET_KEY[v])}
-            onChange={(v) => onChange(setPreset(config, v))}
+            options={RULE_CHOICES}
+            label={(v) =>
+              v === 'custom' && !hasPlus ? `${t(PRESET_KEY[v])} 🔒` : t(PRESET_KEY[v])
+            }
+            onChange={pickRules}
           />
         </div>
-        <p class="setting-hint">{t(PRESET_HINT[config.preset])}</p>
+        <p class="setting-hint">
+          {config.preset === 'custom' && !hasPlus
+            ? t('presetCustomLocked')
+            : t(PRESET_HINT[config.preset])}
+        </p>
+        {config.preset === 'custom' && hasPlus && (
+          <button
+            type="button"
+            class="bots-toggle custom-edit"
+            data-testid="party-custom-edit"
+            onClick={() => setEditing(true)}
+          >
+            {t('customEdit')}
+          </button>
+        )}
         <div class="setting-row">
           <span class="setting-name">{t('partyWins')}</span>
           <Segmented<number>
@@ -165,6 +204,14 @@ export function PartySetup(props: {
           hasPlus={hasPlus}
           onSelect={(id) => onChange(setArena(config, id))}
           onClose={() => setPicking(false)}
+          {...(onLocked ? { onLocked } : {})}
+        />
+      )}
+      {editing && (
+        <CustomRulesEditor
+          value={config.custom}
+          onChange={(custom: CustomRules) => onChange(setCustom(config, custom))}
+          onClose={() => setEditing(false)}
         />
       )}
     </div>

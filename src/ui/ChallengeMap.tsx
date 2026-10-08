@@ -29,8 +29,10 @@ export function ChallengeMap(props: {
   world?: number;
   onPlay: (id: string) => void;
   onBack: () => void;
+  /** Show the paywall (a Blastyard+ world is selected). */
+  onPlus?: () => void;
 }) {
-  const { progress, hasPlus, onPlay, onBack } = props;
+  const { progress, hasPlus, onPlay, onBack, onPlus } = props;
   const [world, setWorld] = useState(props.world ?? 1);
   const [selected, setSelected] = useState<string>(() => {
     const first = worldLevels(props.world ?? 1).find((l) => progress.starsOf(l.id) === 0);
@@ -131,9 +133,21 @@ export function ChallengeMap(props: {
                 <span class="mode-name">{t('challengePlay')}</span>
               </button>
             ) : (
-              <p class="level-lock-hint" data-testid="level-lock-hint" role="status">
-                {lock === 'locked-plus' ? t('plusWorldHint') : t('levelLockedHint')}
-              </p>
+              <>
+                <p class="level-lock-hint" data-testid="level-lock-hint" role="status">
+                  {lock === 'locked-plus' ? t('plusWorldHint') : t('levelLockedHint')}
+                </p>
+                {lock === 'locked-plus' && onPlus && (
+                  <button
+                    type="button"
+                    class="mode-button compact"
+                    data-testid="challenge-plus"
+                    onClick={onPlus}
+                  >
+                    <span class="mode-name">{t('paywallMore')}</span>
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

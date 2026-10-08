@@ -4,7 +4,7 @@
  * is validated, anything wrong falls back to the default (a corrupt entry never breaks the game).
  */
 
-import { BotLevel, RULE_PRESETS, WINS_TO_MATCH_OPTIONS, type PresetId } from '../core';
+import { BotLevel, RULE_PRESETS, WINS_TO_MATCH_OPTIONS } from '../core';
 import { SEAT_ORIENTATIONS, type SeatOrientation } from '../input/rotation';
 import type { KeyValueStore } from '../platform/storage';
 import {
@@ -14,8 +14,10 @@ import {
   setLayout,
   type PartyConfig,
   type PartySeat,
+  type RulesChoice,
 } from './party';
 import { arenaById } from '../content/arenas';
+import { sanitizeCustom } from './customRules';
 
 export const PARTY_KEY = 'blastyard.party.v1';
 
@@ -65,9 +67,10 @@ export function sanitizeStored(raw: unknown): StoredParty {
     seats,
     orientations,
     preset:
-      typeof c.preset === 'string' && c.preset in RULE_PRESETS
-        ? (c.preset as PresetId)
+      typeof c.preset === 'string' && (c.preset in RULE_PRESETS || c.preset === 'custom')
+        ? (c.preset as RulesChoice)
         : base.preset,
+    custom: sanitizeCustom(c.custom),
     winsToMatch: WINS_TO_MATCH_OPTIONS.includes(c.winsToMatch as number)
       ? (c.winsToMatch as number)
       : base.winsToMatch,

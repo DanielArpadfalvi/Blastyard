@@ -13,6 +13,7 @@ import { TUTORIAL_ID } from '../content/tutorial';
 import { Hud } from './Hud';
 import { PartySetup } from './PartySetup';
 import { PauseOverlay } from './PauseOverlay';
+import { Paywall, PlusCard } from './Paywall';
 import { ResultScreen } from './ResultScreen';
 import { SettingsPanel } from './SettingsPanel';
 import { StartScreen } from './StartScreen';
@@ -43,6 +44,8 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
   const [, setRevision] = useState(0);
   const [tester, setTester] = useState(touchTest);
   const [settings, setSettings] = useState(false);
+  const [paywall, setPaywall] = useState(false);
+  const [plusCardClosed, setPlusCardClosed] = useState(false);
   const [menuView, setMenuView] = useState<MenuView>('start');
   const [mapWorld, setMapWorld] = useState(1);
   const [party, setParty] = useState<PartyConfig | null>(() => shell?.getParty().config ?? null);
@@ -84,6 +87,10 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
    */
   const goBack = (): boolean => {
     if (!shell) return false;
+    if (paywall) {
+      setPaywall(false);
+      return true;
+    }
     if (tester) {
       setTester(false);
       return true;
@@ -173,6 +180,7 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
           }}
           onPlay={(config) => shell.startLobby(config)}
           onBack={() => setMenuView('start')}
+          onLocked={() => setPaywall(true)}
         />
       )}
       {shell && menu && menuView === 'challenges' && (
@@ -185,6 +193,7 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
             shell.startChallenge(id);
           }}
           onBack={() => setMenuView('start')}
+          onPlus={() => setPaywall(true)}
         />
       )}
       {shell && menu && menuView === 'daily' && (
@@ -207,6 +216,7 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
             // New looks show on the menu backdrop right away.
             toMenu('start');
           }}
+          onLocked={() => setPaywall(true)}
         />
       )}
       {shell && screen === 'menu' && settings && (
@@ -218,6 +228,7 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
             setTester(true);
           }}
           onBack={() => setSettings(false)}
+          onPlus={() => setPaywall(true)}
         />
       )}
       {tester && <TouchTester onBack={() => setTester(false)} />}
@@ -260,7 +271,11 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
         />
       )}
       {shell && screen === 'result' && result && result.mode !== 'attract' && (
-        <ResultScreen result={result} onAgain={() => shell.again()} onMenu={() => toMenu()} />
+        <ResultScreen result={result} onAgain={() => shell.again()} onMenu={() => toMenu()}>
+          {state?.plusHint && !plusCardClosed && !shell.hasPlus() && (
+            <PlusCard onOpen={() => setPaywall(true)} onDismiss={() => setPlusCardClosed(true)} />
+          )}
+        </ResultScreen>
       )}
       {shell && screen === 'challengeResult' && challengeResult && (
         <ChallengeResultScreen
@@ -270,6 +285,9 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
           onNext={() => shell.startNextChallenge()}
           onMap={() => toMenu(challengeResult.daily ? 'daily' : 'challenges')}
         />
+      )}
+      {shell && paywall && (
+        <Paywall entitlements={shell.entitlements} onClose={() => setPaywall(false)} />
       )}
       <div class="rotate-hint" role="status">
         {t('rotateDevice')}

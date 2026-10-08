@@ -15,6 +15,8 @@ export interface ProgressContext {
   /** Best daily streak ever. */
   readonly bestStreak: number;
   readonly hasPlus: boolean;
+  /** Owns the Supporter pack (cosmetic thanks). */
+  readonly hasSupporter?: boolean;
 }
 
 /** How far `unlock` is: `have` of `need` (both 1 / 0 for start and Plus items). */
@@ -27,6 +29,8 @@ export function unlockProgress(
       return { have: 1, need: 1 };
     case 'plus':
       return { have: ctx.hasPlus ? 1 : 0, need: 1 };
+    case 'supporter':
+      return { have: ctx.hasSupporter === true ? 1 : 0, need: 1 };
     case 'matches':
       return { have: ctx.stats.matches, need: unlock.n };
     case 'wins':

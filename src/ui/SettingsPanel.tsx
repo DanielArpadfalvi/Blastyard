@@ -14,9 +14,9 @@ import {
   type Settings,
   type SettingsStore,
 } from '../game/settings';
-import { t, type TranslationKey } from '../i18n';
+import { getLanguage, t, type TranslationKey } from '../i18n';
 import type { Entitlements, RestoreResult } from '../platform/entitlement';
-import { PRIVACY_URL, SUPPORT_URL, openExternal } from '../platform/links';
+import { openExternal, siteUrl } from '../platform/links';
 import { Segmented } from './Segmented';
 
 const HAPTIC_LABEL: Record<HapticsSetting, TranslationKey> = {
@@ -117,8 +117,10 @@ export function SettingsPanel(props: {
   entitlements?: Entitlements;
   onTouchTest?: () => void;
   onBack: () => void;
+  /** Open the Blastyard+ / Supporter page. */
+  onPlus?: () => void;
 }) {
-  const { store, entitlements, onTouchTest, onBack } = props;
+  const { store, entitlements, onTouchTest, onBack, onPlus } = props;
   const [s, setS] = useState<Settings>(store.get());
   const [restore, setRestore] = useState<RestoreResult | 'busy' | null>(null);
   useEffect(() => store.subscribe(setS), [store]);
@@ -267,7 +269,7 @@ export function SettingsPanel(props: {
               type="button"
               class="bots-toggle"
               data-testid="about-privacy"
-              onClick={() => openExternal(PRIVACY_URL)}
+              onClick={() => openExternal(siteUrl('privacy', getLanguage()))}
             >
               {t('aboutPrivacy')}
             </button>
@@ -275,10 +277,20 @@ export function SettingsPanel(props: {
               type="button"
               class="bots-toggle"
               data-testid="about-support"
-              onClick={() => openExternal(SUPPORT_URL)}
+              onClick={() => openExternal(siteUrl('support', getLanguage()))}
             >
               {t('aboutSupport')}
             </button>
+            {onPlus && (
+              <button
+                type="button"
+                class="bots-toggle"
+                data-testid="settings-plus"
+                onClick={onPlus}
+              >
+                {t('settingsPlus')}
+              </button>
+            )}
             {entitlements && (
               <button
                 type="button"
@@ -293,7 +305,11 @@ export function SettingsPanel(props: {
           </div>
           {restore !== null && restore !== 'busy' && (
             <p class="setting-hint" role="status" data-testid="restore-status">
-              {t(RESTORE_LABEL[restore])}
+              {t(
+                restore === 'restored' && !entitlements?.hasPlus()
+                  ? 'restoreRestoredAny'
+                  : RESTORE_LABEL[restore],
+              )}
             </p>
           )}
         </Section>

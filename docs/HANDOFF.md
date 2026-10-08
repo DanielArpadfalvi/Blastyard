@@ -3,42 +3,30 @@
 Current state, next steps and local setup for the next session (human or agent). Updated after
 every finished task (rule in `CLAUDE.md`).
 
-## Last update: 2026-10-08 – M7 done (T7.3 waits on the owner's device check); CI e2e investigated
+## Last update: 2026-10-08 – M8 T8.1 purchases done; M9 T9.1 listing + T9.3 site done; APK → Google Drive
 
 ### Done in the latest session (branch `claude/relaxed-allen-18zaek`)
-- **T5.3 daily challenge** – `src/game/daily.ts`, `dailyStore.ts`, `src/ui/DailyScreen.tsx`; the
-  bot solver moved to `src/game/solver.ts` (shared with `scripts/solve-challenges.ts`).
-- **T5.4 tutorial + first-time tips** – `src/content/tutorial.ts` (five-stage challenge level,
-  new `chain` objective), `src/game/tips.ts`, `src/ui/Tutorial.tsx`.
-- **T5.5 gamepad** – `src/input/gamepad.ts`, `webGamepads()` in `src/input/dom.ts`, controller
-  badge in `src/ui/Hud.tsx`; spike notes in `docs/touch-spike.md` §4.
-- **T6.1 menus & flow** – settings sections (`src/ui/SettingsPanel.tsx`, `src/game/settings.ts`),
-  friendly rule + corner-assist strength as core rule flags (defaults unchanged, no `SIM_VERSION`
-  bump), control prefs (`touchParamsFor`, `zonesForPlan(…, prefs)`), result stats table,
-  back handling (`src/platform/back.ts` + `goBack` in `src/ui/App.tsx`), `@capacitor/app`
-  dependency (the Android CI's `cap sync` registers it; `cap update` fails locally without
-  built assets – harmless).
-- **T6.2 save & progression** – `src/game/save.ts` (one versioned document `blastyard.save`,
-  migration hook, corrupt / newer-version handling), `stats.ts`, `unlocks.ts`, `looks.ts`,
-  `src/content/trophies.ts` (20), `src/ui/Customize.tsx` (looks per seat + trophies & stats).
-- **T6.3 i18n & accessibility** – `tests/unit/i18nStrings.test.ts` (no hard-coded UI strings,
-  placeholder parity), HU overflow checks at 667×375 / 1280×720 / 2048×1536 in
-  `tests/e2e/menus.spec.ts`, small-phone CSS (scrolling cards, compact start card).
-- **T7.1 Capacitor shell** – `src/platform/system.ts` (keep-awake, orientation lock, gesture
-  exclusion; shell enables it for lobby + matches), own native plugin
-  (`android/app/src/main/java/app/blastyard/BlastyardSystemPlugin.java`,
-  `ios/App/App/BlastyardSystemPlugin.swift`), iOS project (SPM) with `BlastyardViewController`,
-  bundle id only in `capacitor.config.ts` (Gradle reads the synced config; iOS via
-  `ios/app-id.xcconfig` from `scripts/native-config.ts`, run by the `capacitor:sync:after` hook).
-- **T7.2 assets** – `scripts/brand.ts` (SVG art) + `npm run assets` (headless Chromium renders all
-  Android / iOS / web icons and splashes; committed).
-- **T7.3 native CI** – `android.yml` (debug APK + unsigned AAB; pre-release only from main),
-  `ios.yml` (macOS: simulator + unsigned device build; also on `claude/**` when iOS inputs change).
-- Details per task: `docs/TASKS.md` (the "Done:" notes under each task).
+- **CI fixes** – the touch tester no longer renders the menu backdrop under itself
+  (`GameShell.setCovered`); perf spec findings below.
+- **APK → Google Drive** – `android.yml` runs on every push and overwrites
+  `Blastyard-debug.apk` in the owner's Drive folder "Mobile games" (`scripts/drive-upload.mjs`,
+  setup in `docs/RELEASE-drive.md`; needs the secret `GDRIVE_SERVICE_ACCOUNT_JSON`).
+- **T8.1 purchases** – `src/platform/entitlement.ts` (port + mock store), `revenuecat.ts`
+  (RevenueCat, no key ⇒ store unavailable), `store.ts` (which port; `?test`, `?store=`, `?plus`,
+  `?supporter`); `src/ui/Paywall.tsx` (paywall, Supporter thanks, one-off card after the 5th
+  match); custom rules (Blastyard+) `src/game/customRules.ts` + `src/ui/CustomRules.tsx`;
+  Supporter items `goldcrown` + `confetti`. Owner setup: `docs/PURCHASES.md`.
+- **T9.1 store listing** – `scripts/storeListing.ts` → `npm run listing` → `docs/store-listing.md`;
+  `docs/store-privacy-answers.md`; trademark guard in `tests/unit/storeListing.test.ts`.
+- **T9.3 site** – `scripts/site.ts` / `siteContent.ts` (`npm run site`), built by `pages.yml`
+  into `/Blastyard/site/`; app links per language (`siteUrl`).
+- Earlier in this branch: T5.3–T5.5, M6, M7 (see `docs/TASKS.md` "Done:" notes).
 
 ### State of the checks
-- `npm run check`: green (typecheck, lint, format, unit tests, content validation incl. the
-  tutorial's reference solution).
+- `npm run check`: green (533 unit tests, content validation incl. the tutorial's reference
+  solution).
+- e2e `landscape-chromium` locally: 82/82 green (incl. new `purchases.spec.ts`, paywall + custom
+  rules in the HU overflow checks of `menus.spec.ts`).
 - CI (`ci.yml`) e2e runs in two steps: the `landscape-chromium` project (all regular specs,
   green), then the real-time render specs (`heavy` project: feel, spike, render) and `perf` on
   one worker.
@@ -54,6 +42,13 @@ every finished task (rule in `CLAUDE.md`).
   report-only in CI, or run it on a GPU runner).
 
 ### Decisions worth knowing
+- Purchases: the web has no store (paywall says "store unavailable") except the mock under
+  `?test` / `?store=`. Natively RevenueCat with the public key from the build env; products are
+  fetched directly (no offerings). A custom party setup without Plus plays Classic (kept, not
+  deleted). Custom power-up frequencies also scale an arena's own weights (`customArena`). The
+  Plus card is a once-only notice in `TipsStore` (`notices: ['plusHint']`).
+- Drive upload: service account (key does not expire) updating a pre-created file (a service
+  account has no storage of its own); the placeholder `Blastyard-debug.apk` exists in the folder.
 - Daily challenge: proven winnable in the browser by the Expert bot (first qualifying seed); the
   pick is cached per day and `SIM_VERSION` in `blastyard.daily.v1`. Official = first started
   attempt of the day; streak = consecutive days won.
@@ -78,6 +73,10 @@ every finished task (rule in `CLAUDE.md`).
   (regenerates `capacitor.settings.gradle`, `CapApp-SPM/Package.swift`, `ios/app-id.xcconfig`).
 
 ### Open owner tasks
+- Purchases: store products, RevenueCat project + entitlements, GitHub secrets
+  `VITE_REVENUECAT_ANDROID_KEY` / `VITE_REVENUECAT_IOS_KEY` (`docs/PURCHASES.md`).
+- Site: enable GitHub Pages (Settings → Pages → GitHub Actions), set the repository variable
+  `SUPPORT_EMAIL`; review the listing texts (`docs/store-listing.md`) and privacy answers.
 - Google Drive APK upload: set the `GDRIVE_SERVICE_ACCOUNT_JSON` secret (steps in
   `docs/RELEASE-drive.md`). Until then the Android workflow skips the upload with a warning.
 - Decide how the CI perf spec should run (see above).
@@ -86,12 +85,11 @@ every finished task (rule in `CLAUDE.md`).
   pre-release once on main) on a device for the touch re-check; try an iOS build on a Mac.
 
 ### Next step
-- **M8 – T8.1 Purchases**: RevenueCat implementation behind `src/platform/entitlement.ts`
-  (interface already has `hasPlus`, `subscribe`, `restore`; add products / buy / pending states),
-  paywall UI, single hint card after the 5th finished match, `?test` mock purchase flow, test that
-  no party feature / player count / bot level / power-up is gated. RevenueCat keys are owner
-  secrets; without a key the native build shows "store unavailable" (never unlocks).
-- Then M9 release prep (store texts, screenshot generator, privacy site, QA, release workflow).
+- **M9 – T9.2 screenshot generator** (`scripts/store-frames.ts`: deterministic scenes – 4-corner
+  party, explosion chain, challenge map, lobby, customization – at the store sizes, EN/HU
+  captions), then T9.4 (QA & balance: bot-league + match-length sims, `docs/QA.md`; device checks
+  are owner tasks) and T9.5 (versions aligned, hidden sourcemaps, iOS `PrivacyInfo.xcprivacy`,
+  signed release workflows, `docs/RELEASE.md`).
 - Gamepad polish (later): menu navigation with a controller, Start = pause.
 
 ## Local setup
