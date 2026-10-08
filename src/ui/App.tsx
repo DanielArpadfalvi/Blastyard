@@ -7,6 +7,7 @@ import { onLanguageChange, t } from '../i18n';
 import { ChallengeMap } from './ChallengeMap';
 import { ChallengeResultScreen } from './ChallengeResult';
 import { DailyScreen } from './DailyScreen';
+import { Customize } from './Customize';
 import { TipBanner, TutorialDone, TutorialHint } from './Tutorial';
 import { TUTORIAL_ID } from '../content/tutorial';
 import { Hud } from './Hud';
@@ -26,7 +27,7 @@ export interface AppProps {
 }
 
 /** What the menu backdrop shows next to the start screen. */
-type MenuView = 'start' | 'party' | 'challenges' | 'daily';
+type MenuView = 'start' | 'party' | 'challenges' | 'daily' | 'customize';
 
 /** Where "leave" from a paused match goes back to. */
 function leaveView(snapshot: SessionSnapshot | null): MenuView {
@@ -126,6 +127,11 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
     [shell],
   );
   const menu = shell && screen === 'menu' && !tester && !settings;
+  const thumbnail = useCallback(
+    (kind: 'puff' | 'hat' | 'pop', id: string, seat: number) =>
+      shell ? shell.thumbnail(kind, id, seat) : Promise.reject(new Error('no shell')),
+    [shell],
+  );
 
   return (
     <div class="overlay" data-testid="ui-root">
@@ -138,6 +144,7 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
           onDaily={() => setMenuView('daily')}
           dailyStreak={shell.daily.view(shell.today()).streak}
           onTutorial={() => shell.startTutorial()}
+          onCustomize={() => setMenuView('customize')}
           onLanguage={(lang) => shell.settings.update({ language: lang })}
           tutorialDone={shell.tips.tutorialDone}
           quickLevel={stored?.quickLevel}
@@ -181,6 +188,20 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
           view={(day) => shell.daily.view(day)}
           onPlay={() => shell.startDaily()}
           onBack={() => setMenuView('start')}
+        />
+      )}
+      {shell && menu && menuView === 'customize' && (
+        <Customize
+          looks={shell.looks}
+          progress={shell.progressContext()}
+          trophies={shell.trophyContext()}
+          stats={shell.stats.get()}
+          favouriteArena={shell.stats.favouriteArena()}
+          thumbnail={thumbnail}
+          onBack={() => {
+            // New looks show on the menu backdrop right away.
+            toMenu('start');
+          }}
         />
       )}
       {shell && screen === 'menu' && settings && (

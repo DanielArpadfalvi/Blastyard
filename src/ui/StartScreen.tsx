@@ -16,6 +16,8 @@ export interface StartScreenProps {
   /** Daily challenge card (T5.3) and the current streak. */
   onDaily?: () => void;
   dailyStreak?: number;
+  /** Customize: looks, trophies and stats (T6.2). */
+  onCustomize?: () => void;
   /** Tutorial (T5.4); `tutorialDone` = finished or skipped (otherwise it is highlighted). */
   onTutorial?: () => void;
   tutorialDone?: boolean;
@@ -42,6 +44,7 @@ export function StartScreen({
   dailyStreak = 0,
   onTutorial,
   tutorialDone = true,
+  onCustomize,
   quickLevel = BotLevel.NORMAL,
   onQuickLevel,
   spike = false,
@@ -124,6 +127,17 @@ export function StartScreen({
           )}
         </div>
         <div class="mode-buttons mode-buttons-minor">
+          {onCustomize && (
+            <button
+              type="button"
+              class="mode-button secondary compact"
+              data-testid="start-customize"
+              onClick={onCustomize}
+            >
+              <span class="mode-name">{t('modeCustomize')}</span>
+              <span class="mode-hint">{t('modeCustomizeHint')}</span>
+            </button>
+          )}
           {onTutorial && (
             <button
               type="button"

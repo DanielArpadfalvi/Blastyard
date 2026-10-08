@@ -20,7 +20,7 @@
  * quality drop when a match runs below 50 FPS for 3 s.
  */
 
-import type { Application } from 'pixi.js';
+import { Container, Sprite, type Application } from 'pixi.js';
 import { GameAudio, type AudioStats } from '../audio';
 import { FREE_ARENAS, arenaById } from '../content/arenas';
 import { levelById, nextLevel, tuningOf } from '../content/challenges';
@@ -53,7 +53,7 @@ import { onAppVisibility } from '../platform/lifecycle';
 import { platformBack, type BackPort } from '../platform/back';
 import { webHaptics, type HapticKind, type HapticsPort } from '../platform/haptics';
 import { prefersReducedMotion } from '../platform/lifecycle';
-import { webStore } from '../platform/storage';
+import { webStore, type KeyValueStore } from '../platform/storage';
 import type { FxStats } from '../render/arenaView';
 import type { FxSettings } from '../render/effects';
 import type { ArenaLayout } from '../render/layout';
@@ -70,6 +70,12 @@ import {
 const QUALITY_RESOLUTION: Readonly<Record<Quality, number>> = { 0: 1, 1: 1.5, 2: Infinity };
 import type { StageDef } from './challenge';
 import { ChallengeProgress } from './progress';
+import { SaveStore } from './save';
+import { StatsStore, type LifetimeStats } from './stats';
+import { LooksStore, wornLook } from './looks';
+import type { ProgressContext } from './unlocks';
+import type { TrophyContext } from '../content/trophies';
+import { hatIndex, popSkinIndex, puffIndex, type Appearance } from '../content/cosmetics';
 import { dayNumber, prepareDailyAsync, type DailyChallenge } from './daily';
 import { DailyStore, betterRecord, type DailyView } from './dailyStore';
 import { botPlay } from './solver';
@@ -153,6 +159,9 @@ export interface ShellDeps {
   readonly tips?: TipsStore;
   readonly gamepads?: GamepadSeats;
   readonly back?: BackPort;
+  readonly save?: KeyValueStore;
+  readonly stats?: StatsStore;
+  readonly looks?: LooksStore;
   readonly partyStore?: PartyStore;
   readonly audio?: GameAudio;
   readonly haptics?: HapticsPort;
@@ -196,6 +205,10 @@ export interface GameTestHook {
   dailyView(): DailyView;
   /** System back action (Android back button): true when the game used it. */
   back(): boolean;
+  /** What each seat wears in new sessions (after milestone / Plus checks). */
+  wornLooks(): Appearance[];
+  /** Lifetime stats. */
+  stats(): LifetimeStats;
   /** Seats a game controller currently steers. */
   gamepadSeats(): number[];
   /** Tutorial: starts it (at step `stage`, 0-based). */
@@ -310,6 +323,11 @@ export class GameShell {
   readonly progress: ChallengeProgress;
   readonly daily: DailyStore;
   readonly tips: TipsStore;
+  /** The save document every store reads and writes through (T6.2). */
+  readonly save: KeyValueStore;
+  readonly stats: StatsStore;
+  readonly looks: LooksStore;
+  private readonly thumbs = new Map<string, Promise<string>>();
   /** Game controllers; their seat claims last across matches (T5.5). */
   readonly gamepads: GamepadSeats;
   /** System back action (Android back button; Escape on desktop) – the UI installs the handler. */
@@ -343,14 +361,19 @@ export class GameShell {
     this.clock = options.clock ?? systemClock;
     this.bots = options.bots;
     this.entitlements = deps.entitlements ?? mockEntitlements(options.plus);
-    this.progress = deps.progress ?? new ChallengeProgress(webStore());
-    this.daily = deps.daily ?? new DailyStore(webStore());
-    this.tips = deps.tips ?? new TipsStore(webStore());
+    // One versioned save document for every persisted part (T6.2).
+    const save = deps.save ?? new SaveStore(webStore());
+    this.save = save;
+    this.progress = deps.progress ?? new ChallengeProgress(save);
+    this.daily = deps.daily ?? new DailyStore(save);
+    this.tips = deps.tips ?? new TipsStore(save);
+    this.stats = deps.stats ?? new StatsStore(save);
+    this.looks = deps.looks ?? new LooksStore(save);
     this.gamepads = deps.gamepads ?? new GamepadSeats(webGamepads());
     this.back = deps.back ?? platformBack();
-    this.partyStore = deps.partyStore ?? new PartyStore(webStore());
+    this.partyStore = deps.partyStore ?? new PartyStore(save);
     this.settings =
-      deps.settings ?? new SettingsStore(webStore(), defaultSettings(prefersReducedMotion()));
+      deps.settings ?? new SettingsStore(save, defaultSettings(prefersReducedMotion()));
     if (options.speed !== null) this.settings.override({ gameSpeed: options.speed });
     if (options.reducedMotion !== null) {
       this.settings.override({ reducedMotion: options.reducedMotion });
@@ -419,6 +442,58 @@ export class GameShell {
   /** The language setting was changed in this session (it then wins over `?lang`). */
   private langTouched = false;
   private lastLanguage: Settings['language'] | null = null;
+
+  /** Milestone / trophy inputs: lifetime stats, stars, best daily streak, Blastyard+. */
+  progressContext(): ProgressContext {
+    return {
+      stats: this.stats.get(),
+      stars: this.progress.totalStars(),
+      bestStreak: this.daily.view(this.today()).bestStreak,
+      hasPlus: this.hasPlus(),
+    };
+  }
+
+  trophyContext(): TrophyContext {
+    return {
+      ...this.progressContext(),
+      starsOf: (id) => this.progress.starsOf(id),
+      tutorialDone: this.tips.tutorialDone,
+    };
+  }
+
+  /** What every seat wears in new sessions (locked items fall back to the seat default). */
+  private wornLooks(): Appearance[] {
+    const ctx = this.progressContext();
+    return this.looks.all().map((look, seat) => wornLook(look, seat, ctx));
+  }
+
+  /**
+   * A cosmetic item drawn as a PNG data URL for the Customize screen (baked once from the same
+   * textures the arena uses, then cached).
+   */
+  thumbnail(kind: 'puff' | 'hat' | 'pop', id: string, seat: number): Promise<string> {
+    const key = kind === 'pop' ? `pop:${id}` : `${kind}:${id}:${seat}:${this.looks.get(seat).puff}`;
+    let found = this.thumbs.get(key);
+    if (!found) {
+      let target: Container;
+      if (kind === 'hat') {
+        // A hat alone is a small shape at the top of its canvas: show it on the seat's Puff.
+        target = new Container();
+        const look = this.looks.get(seat);
+        target.addChild(new Sprite(this.arenaTex.puffOf(puffIndex(look.puff), seat)));
+        target.addChild(new Sprite(this.arenaTex.hatOf(Math.max(0, hatIndex(id)))));
+      } else {
+        target = new Sprite(
+          kind === 'puff'
+            ? this.arenaTex.puffOf(puffIndex(id), seat)
+            : this.arenaTex.popOf(popSkinIndex(id)),
+        );
+      }
+      found = this.app.renderer.extract.base64({ target });
+      this.thumbs.set(key, found);
+    }
+    return found;
+  }
 
   /** Touch control preferences for new sessions. */
   private controlPrefs(): ControlPrefs {
@@ -535,6 +610,7 @@ export class GameShell {
           gamepads: this.gamepads,
           controls: this.controlPrefs(),
           ruleTweaks: this.ruleTweaks(),
+          looks: this.wornLooks(),
         },
         this.matchCallbacks(),
       ),
@@ -549,8 +625,10 @@ export class GameShell {
     speed: number;
     gamepads: GamepadSeats;
     controls: ControlPrefs;
+    looks: Appearance[];
   } {
     return {
+      looks: this.wornLooks(),
       gamepads: this.gamepads,
       controls: this.controlPrefs(),
       manualClock: this.options.manualClock,
@@ -570,6 +648,8 @@ export class GameShell {
       onTip: this.onTip,
       onMatchOver: (result) => {
         this.session?.disableInput();
+        const arena = this.session?.options.arena.id;
+        if (arena) this.stats.recordMatch(result, arena);
         this.toResult(result);
       },
     };
@@ -690,7 +770,10 @@ export class GameShell {
           onTip: this.onTip,
           onChallengeOver: (result) => {
             this.session?.disableInput();
-            if (result.won) this.progress.record(result.level.id, result.stars);
+            if (result.won) {
+              this.progress.record(result.level.id, result.stars);
+              this.stats.recordChallengeWin();
+            }
             this.pacer.setCap(MENU_FPS_CAP);
             this.audio.menu();
             this.set({ screen: 'challengeResult', challengeResult: result });
@@ -757,6 +840,7 @@ export class GameShell {
             const record = { won: result.won, stars: result.stars, ticks: result.stats.ticks };
             const newBest = betterRecord(record, this.daily.view(day).best) && result.won;
             this.daily.finish(day, official, record);
+            if (result.won) this.stats.recordDailyWin();
             this.pacer.setCap(MENU_FPS_CAP);
             this.audio.menu();
             this.set({
@@ -968,6 +1052,7 @@ export class GameShell {
           winsToMatch: 1,
           manualClock: this.options.manualClock,
           fx: this.fxSettings(),
+          looks: this.wornLooks(),
         },
         {
           // Keep the backdrop alive: a decided bot match is replaced by a fresh one.
@@ -1034,6 +1119,8 @@ export class GameShell {
       startTutorial: (stage) => this.startTutorial(stage ?? 0),
       gamepadSeats: () => this.gamepads.assignedSeats(),
       back: () => this.back.trigger(),
+      wornLooks: () => this.wornLooks(),
+      stats: () => this.stats.get(),
       tips: () => ({
         tutorialDone: this.tips.tutorialDone,
         shown: TIP_IDS.filter((id) => this.tips.seen(id)),

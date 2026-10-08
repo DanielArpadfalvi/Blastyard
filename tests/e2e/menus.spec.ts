@@ -76,6 +76,7 @@ for (const vp of [
         'start-challenges',
         'start-daily',
         'start-tutorial',
+        'start-customize',
         'open-settings',
       ]) {
         await expect(page.getByTestId(id)).toBeVisible();
@@ -88,6 +89,7 @@ for (const vp of [
         ['start-challenges', 'challenge-map'],
         ['start-daily', 'daily-screen'],
         ['open-settings', 'settings-screen'],
+        ['start-customize', 'customize-screen'],
       ];
       for (const [button, screen] of views) {
         await page.getByTestId(button).click();

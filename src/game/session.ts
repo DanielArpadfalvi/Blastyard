@@ -63,6 +63,7 @@ import {
   type StarCond,
 } from './challenge';
 import { tipForEvent, type TipId } from './tips';
+import type { Appearance } from '../content/cosmetics';
 import type { DailyOutcome } from './dailyStore';
 import { HapticsDirector } from './haptics';
 import { HudSignature, RESULT_DELAY_TICKS, hudModel, type HudModel } from './hud';
@@ -114,6 +115,8 @@ export interface SessionOptions {
   readonly feel?: SessionFeel;
   /** Controllers (T5.5; shared by the shell so claims last across matches). */
   readonly gamepads?: GamepadSeats;
+  /** What each seat wears (T6.2); defaults when absent. */
+  readonly looks?: readonly Appearance[];
   /** Touch control preferences from the settings (T6.1). */
   readonly controls?: ControlPrefs;
   /** Player rule options (friendly rule, corner assist) for party / quick / first-playable modes. */
@@ -303,6 +306,7 @@ export class GameSession {
     );
     this.view = new ArenaView(arenaTex, options.fx);
     this.view.bindArena(state, this.stageArena().theme);
+    this.applyLooks();
     this.controls = new ControlsView(controlTex, arenaTex);
     app.stage.addChild(this.view.root, this.controls.root);
 
@@ -361,6 +365,10 @@ export class GameSession {
       return createState(stageSetup(challenge.level, k, challenge.tuning.seeds[k] ?? seed));
     }
     return createState(this.tweak(matchSetupFor(mode, this.options)));
+  }
+
+  private applyLooks(): void {
+    this.options.looks?.forEach((look, seat) => this.view.setAppearance(seat, look));
   }
 
   /** Applies the player's rule options to a party / first-playable match setup. */
@@ -653,6 +661,7 @@ export class GameSession {
     this.view.destroy();
     this.view = new ArenaView(this.arenaTex, this.options.fx);
     this.view.bindArena(state, tracker.stageDef.arena.theme);
+    this.applyLooks();
     this.app.stage.addChildAt(this.view.root, 0);
     this.view.setLayout(this.layout);
     // The next stage may bring other bots: their seats get HUD panels.
