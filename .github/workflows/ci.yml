@@ -29,7 +29,13 @@ jobs:
       - run: npm run check
       - run: npm run sim:bench
       - run: npm run build
-      - run: npm run test:e2e
+      # The real-time render specs (project `heavy`) and the frame-rate check (`perf`) run alone,
+      # one at a time, after everything else: software WebGL gives them the whole runner.
+      - name: e2e
+        run: npx playwright test --project=landscape-chromium
+      - name: e2e (real-time rendering, one worker)
+        if: success() || failure()
+        run: npx playwright test --project=heavy --project=perf --no-deps --workers=1
       - uses: actions/upload-artifact@v5
         if: always()
         with:
