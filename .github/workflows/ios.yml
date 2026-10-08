@@ -1,0 +1,54 @@
+name: iOS
+
+# Builds the iOS app on a macOS runner without signing (T7.3): a simulator build that proves the
+# Xcode project, the Swift sources and the Swift Package plugins compile, and an unsigned device
+# build (`.app` zipped as an artifact). Store signing comes with the release workflow (T9.5).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    env:
+      VERSION_NAME: 0.1.${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vite build
+      # Also writes ios/app-id.xcconfig (bundle id) through the capacitor:sync:after hook.
+      - run: npx cap sync ios
+      - name: Show Xcode version
+        run: xcodebuild -version
+      - name: Build for the simulator
+        working-directory: ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/sim CODE_SIGNING_ALLOWED=NO build
+      - name: Build for devices (unsigned)
+        working-directory: ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -derivedDataPath build/device \
+            MARKETING_VERSION=${{ env.VERSION_NAME }} CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+      - name: Zip the app
+        run: |
+          cd ios/App/build/device/Build/Products/Release-iphoneos
+          zip -qr "$GITHUB_WORKSPACE/blastyard-ios-unsigned-${{ env.VERSION_NAME }}.zip" App.app
+      - uses: actions/upload-artifact@v5
+        with:
+          name: blastyard-ios-unsigned
+          path: blastyard-ios-unsigned-*.zip

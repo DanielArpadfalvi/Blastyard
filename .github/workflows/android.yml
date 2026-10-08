@@ -32,15 +32,22 @@ jobs:
       - run: npm ci
       - run: npx vite build
       - run: npx cap sync android
-      - name: Build debug APK
+      - name: Build debug APK and release bundle (unsigned AAB)
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
-      - name: Rename APK
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk blastyard-debug-${{ env.VERSION_NAME }}.apk
+        run: ./gradlew assembleDebug bundleRelease --no-daemon
+      - name: Rename APK / AAB
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk blastyard-debug-${{ env.VERSION_NAME }}.apk
+          cp android/app/build/outputs/bundle/release/app-release.aab blastyard-unsigned-${{ env.VERSION_NAME }}.aab
       - uses: actions/upload-artifact@v5
         with:
           name: blastyard-debug-apk
           path: blastyard-debug-*.apk
+      # Unsigned: signing for the store comes with the release workflow (T9.5).
+      - uses: actions/upload-artifact@v5
+        with:
+          name: blastyard-release-aab-unsigned
+          path: blastyard-unsigned-*.aab
       - name: Publish to "android-debug-latest" pre-release
         if: github.ref == 'refs/heads/main'
         env:

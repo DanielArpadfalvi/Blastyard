@@ -20,7 +20,8 @@
     "validate:content": "node scripts/run-ts.mjs scripts/validate-content.ts",
     "solve:challenges": "node scripts/run-ts.mjs scripts/solve-challenges.ts",
     "native:config": "node scripts/run-ts.mjs scripts/native-config.ts",
-    "capacitor:sync:after": "npm run native:config"
+    "capacitor:sync:after": "npm run native:config",
+    "assets": "node scripts/run-ts.mjs scripts/assets.ts"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
