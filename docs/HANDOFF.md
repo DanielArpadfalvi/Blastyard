@@ -3,7 +3,7 @@
 Current state, next steps and local setup for the next session (human or agent). Updated after
 every finished task (rule in `CLAUDE.md`).
 
-## Last update: 2026-10-08 – T6.2 save & progression done (T6.1 complete with it)
+## Last update: 2026-10-08 – M6 complete (T6.1 menus, T6.2 save & progression, T6.3 i18n & a11y)
 
 ### Done in the latest session (branch `claude/relaxed-allen-18zaek`)
 - **T5.3 daily challenge** – `src/game/daily.ts`, `dailyStore.ts`, `src/ui/DailyScreen.tsx`; the
@@ -21,6 +21,9 @@ every finished task (rule in `CLAUDE.md`).
 - **T6.2 save & progression** – `src/game/save.ts` (one versioned document `blastyard.save`,
   migration hook, corrupt / newer-version handling), `stats.ts`, `unlocks.ts`, `looks.ts`,
   `src/content/trophies.ts` (20), `src/ui/Customize.tsx` (looks per seat + trophies & stats).
+- **T6.3 i18n & accessibility** – `tests/unit/i18nStrings.test.ts` (no hard-coded UI strings,
+  placeholder parity), HU overflow checks at 667×375 / 1280×720 / 2048×1536 in
+  `tests/e2e/menus.spec.ts`, small-phone CSS (scrolling cards, compact start card).
 - Details per task: `docs/TASKS.md` (the "Done:" notes under each task).
 
 ### State of the checks
@@ -50,13 +53,15 @@ every finished task (rule in `CLAUDE.md`).
 - T2.4 device touch spike (`docs/touch-spike.md` §1–3) and the gamepad device check (§4).
 
 ### Next step
-- **T6.3 i18n & accessibility**: a lint/unit test that fails on hard-coded user-visible strings in
-  `src/ui/**` (JSX text and `aria-label` / `title` / `alt` literals; allow symbols / numbers),
-  check that `en` and `hu` have identical key sets (likely already tested in
-  `tests/unit/i18n.test.ts`), HU screenshots for overflow, fuse audio cue check, colour + shape +
-  number seat identity (exists).
-- Then M7 (T7.1 Capacitor shell incl. the iOS first-responder note, T7.2 icons from code, T7.3
-  native CI) and M8 purchases.
+- **M7 – T7.1 Capacitor 8 shell**: Android project exists (keep-awake + immersive in
+  `MainActivity.java`, `@capacitor/app` for back); still open per TASKS: iOS project (macOS CI
+  only – can't build here), orientation lock during lobby/match, safe areas, Android
+  system-gesture exclusion rects, iOS deferred edge gestures, status bar, lifecycle pause/resume
+  via Capacitor App `pause`/`resume`, the iOS WKWebView first-responder for gamepads (T5.5), all
+  behind `src/platform` with web mocks + unit tests. `npx cap sync` needs built assets
+  (`npm run build` first); native builds only in GitHub Actions.
+- Then T7.2 icons/splash from code, T7.3 native CI, M8 purchases (RevenueCat behind
+  `src/platform/entitlement.ts`, which already has `restore()`).
 - Gamepad polish (later): menu navigation with a controller, Start = pause.
 
 ## Local setup

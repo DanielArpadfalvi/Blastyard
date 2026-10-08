@@ -1502,3 +1502,52 @@ html.large-text {
     flex-basis: auto;
   }
 }
+
+/* ------------------------------------------------------------------ small phones (T6.3) */
+/* Every card scrolls instead of running off a short landscape screen. */
+.card {
+  max-height: calc(100vh - var(--safe-top) - var(--safe-bottom) - 0.5rem);
+  overflow-y: auto;
+}
+
+@media (max-height: 480px) {
+  .card {
+    padding: 0.7rem 1rem 0.8rem;
+  }
+  .start-card .tagline,
+  .start-card .key-hint {
+    display: none;
+  }
+  .title {
+    font-size: 2rem;
+  }
+  .mode-buttons,
+  .result-buttons {
+    gap: 0.5rem;
+  }
+  .mode-button {
+    min-width: 8.5rem;
+    padding: 0.45rem 0.9rem;
+  }
+  .mode-name {
+    font-size: 1.05rem;
+  }
+  .mode-hint {
+    font-size: 0.72rem;
+  }
+  .mode-buttons-minor {
+    margin-top: 0.5rem;
+  }
+}
+
+.customize-card > *,
+.map-card > .map-head,
+.map-card > .world-tabs {
+  flex-shrink: 0;
+}
+
+.customize-card > .item-grid {
+  flex: 1 1 auto;
+  flex-shrink: 1;
+  min-height: 7.5rem;
+}

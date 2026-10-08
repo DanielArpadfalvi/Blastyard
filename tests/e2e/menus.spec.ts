@@ -58,7 +58,22 @@ async function expectButtonsInside(page: Page, root: Locator): Promise<void> {
   expect(overflow).toBeLessThanOrEqual(1);
 }
 
+/**
+ * T6.3: no button, segment or label of `root` clips its (Hungarian, usually longest) text
+ * sideways.
+ */
+async function expectNoTextOverflow(root: Locator): Promise<void> {
+  const clipped = await root.evaluate((el) =>
+    [...el.querySelectorAll('button, .segment, .setting-name, .mode-name, .mode-hint, h2, h3')]
+      .filter((e) => (e as HTMLElement).offsetParent !== null)
+      .filter((e) => e.scrollWidth > e.clientWidth + 1)
+      .map((e) => `${e.tagName}.${e.className}: ${(e.textContent ?? '').trim().slice(0, 40)}`),
+  );
+  expect(clipped).toEqual([]);
+}
+
 for (const vp of [
+  { width: 667, height: 375 },
   { width: 1280, height: 720 },
   { width: 2048, height: 1536 },
 ]) {
@@ -69,6 +84,7 @@ for (const vp of [
       const errors = await open(page, '&lang=hu');
       const tag = `${vp.width}x${vp.height}`;
       await expectButtonsInside(page, page.getByTestId('start-screen'));
+      await expectNoTextOverflow(page.getByTestId('start-screen'));
       await shot(page, `start-${tag}.png`);
       for (const id of [
         'start-quick',
@@ -98,6 +114,7 @@ for (const vp of [
           await expect(page.getByTestId('daily-card')).toBeVisible({ timeout: 30_000 });
         }
         await expectButtonsInside(page, page.getByTestId(screen));
+        await expectNoTextOverflow(page.getByTestId(screen));
         await shot(page, `${screen}-${tag}.png`);
         expect(await back(page)).toBe(true);
         await expect(page.getByTestId('start-screen')).toBeVisible();
