@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useCallback, useEffect, useState } from 'preact/hooks';
 import type { PartyConfig } from '../game/party';
+import { isDailyLevel } from '../game/daily';
+import type { SessionSnapshot } from '../game/session';
 import type { GameShell, ShellState } from '../game/shell';
 import { onLanguageChange, t } from '../i18n';
 import { ChallengeMap } from './ChallengeMap';
 import { ChallengeResultScreen } from './ChallengeResult';
+import { DailyScreen } from './DailyScreen';
 import { Hud } from './Hud';
 import { PartySetup } from './PartySetup';
 import { PauseOverlay } from './PauseOverlay';
@@ -21,7 +24,15 @@ export interface AppProps {
 }
 
 /** What the menu backdrop shows next to the start screen. */
-type MenuView = 'start' | 'party' | 'challenges';
+type MenuView = 'start' | 'party' | 'challenges' | 'daily';
+
+/** Where "leave" from a paused match goes back to. */
+function leaveView(snapshot: SessionSnapshot | null): MenuView {
+  if (snapshot?.mode !== 'challenge') return 'start';
+  return snapshot.challenge && isDailyLevel({ id: snapshot.challenge.levelId })
+    ? 'daily'
+    : 'challenges';
+}
 
 /** Root of the DOM overlay drawn above the Pixi canvas. */
 export function App({ shell, spike = false, touchTest = false }: AppProps) {
@@ -39,9 +50,11 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
     if (!shell) return undefined;
     const bump = (): void => setRevision((r) => r + 1);
     const offProgress = shell.progress.subscribe(bump);
+    const offDaily = shell.daily.subscribe(bump);
     const offPlus = shell.entitlements.subscribe(bump);
     return () => {
       offProgress();
+      offDaily();
       offPlus();
     };
   }, [shell]);
@@ -69,6 +82,10 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
     setMenuView(view);
   };
   const stored = shell?.getParty();
+  const prepareDaily = useCallback(
+    () => (shell ? shell.prepareDaily() : Promise.reject(new Error('no shell'))),
+    [shell],
+  );
   const menu = shell && screen === 'menu' && !tester && !settings;
 
   return (
@@ -79,6 +96,8 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
           onParty={() => setMenuView('party')}
           onQuick={() => shell.startQuick()}
           onChallenges={() => setMenuView('challenges')}
+          onDaily={() => setMenuView('daily')}
+          dailyStreak={shell.daily.view(shell.today()).streak}
           quickLevel={stored?.quickLevel}
           onQuickLevel={(level) => {
             if (stored) shell.setParty({ ...stored, quickLevel: level });
@@ -114,6 +133,14 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
           onBack={() => setMenuView('start')}
         />
       )}
+      {shell && menu && menuView === 'daily' && (
+        <DailyScreen
+          prepare={prepareDaily}
+          view={(day) => shell.daily.view(day)}
+          onPlay={() => shell.startDaily()}
+          onBack={() => setMenuView('start')}
+        />
+      )}
       {shell && screen === 'menu' && settings && (
         <SettingsPanel store={shell.settings} onBack={() => setSettings(false)} />
       )}
@@ -134,7 +161,7 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
         <PauseOverlay
           onResume={() => shell.setPaused(false)}
           onRestart={() => shell.again()}
-          onLeave={() => toMenu(state?.snapshot?.mode === 'challenge' ? 'challenges' : 'start')}
+          onLeave={() => toMenu(leaveView(state?.snapshot ?? null))}
         />
       )}
       {shell && screen === 'result' && result && result.mode !== 'attract' && (
@@ -146,7 +173,7 @@ export function App({ shell, spike = false, touchTest = false }: AppProps) {
           hasNext={shell.nextChallengeId() !== null}
           onRetry={() => shell.again()}
           onNext={() => shell.startNextChallenge()}
-          onMap={() => toMenu('challenges')}
+          onMap={() => toMenu(challengeResult.daily ? 'daily' : 'challenges')}
         />
       )}
       <div class="rotate-hint" role="status">

@@ -1141,3 +1141,51 @@ body {
 .goal-note {
   opacity: 0.75;
 }
+
+/* Daily challenge (T5.3) */
+.daily-body .level-card {
+  flex: 1 1 0;
+}
+
+.daily-mod {
+  margin: 0;
+  padding: 0.25rem 0.55rem;
+  border-radius: 0.6rem;
+  background: rgba(255, 182, 39, 0.22);
+  font-weight: 700;
+  font-size: clamp(0.78rem, 2.1vh, 1rem);
+}
+
+.daily-status {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: clamp(0.78rem, 2.1vh, 1rem);
+}
+
+.daily-status b {
+  color: #ffd23f;
+}
+
+.daily-badge {
+  display: inline-block;
+  margin: 0 0 0.3rem;
+  padding: 0.1rem 0.6rem;
+  border-radius: 0.6rem;
+  background: rgba(255, 182, 39, 0.3);
+  font-weight: 800;
+  font-size: 0.85rem;
+}
+
+.daily-badge.daily-new-best {
+  background: #ffb627;
+  color: #2b2118;
+}
+
+.result-card .daily-status {
+  align-items: center;
+  margin-bottom: 0.4rem;
+}

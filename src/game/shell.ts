@@ -13,6 +13,7 @@
  *   `speed=70|85|100`  game speed for this session (default: settings)
  *   `motion=reduced|full`  reduced motion for this session (default: settings / OS)
  *   `plus`             pretend Blastyard+ is owned (mock entitlement, T5.1/T5.2; real purchases: M8)
+ *   `date=YYYY-MM-DD`  the daily challenge of that date instead of today's (T5.3)
  *
  * The shell also owns the game feel (T3.2/T3.3): settings, audio (unlocked by the first user
  * gesture), haptics, the frame pacer (60 FPS in a match, 30 in menus) and the automatic effect
@@ -23,10 +24,25 @@ import type { Application } from 'pixi.js';
 import { GameAudio, type AudioStats } from '../audio';
 import { FREE_ARENAS, arenaById } from '../content/arenas';
 import { levelById, nextLevel, tuningOf } from '../content/challenges';
-import { BotLevel, Hdr, Phase, hashHex, rleLength, stateHash, type ArenaDef } from '../core';
+import {
+  BotLevel,
+  Hdr,
+  Phase,
+  hashHex,
+  rleEncode,
+  rleLength,
+  stateHash,
+  type ArenaDef,
+} from '../core';
 import type { SeatOrientation } from '../input/rotation';
 import type { ZoneSpec } from '../input/zones';
-import { systemClock, type Clock } from '../platform/clock';
+import {
+  localDate,
+  parseDate,
+  systemClock,
+  type CalendarDate,
+  type Clock,
+} from '../platform/clock';
 import { mockEntitlements, type MockEntitlements } from '../platform/entitlement';
 import { onAppVisibility } from '../platform/lifecycle';
 import { webHaptics, type HapticKind, type HapticsPort } from '../platform/haptics';
@@ -48,6 +64,9 @@ import {
 const QUALITY_RESOLUTION: Readonly<Record<Quality, number>> = { 0: 1, 1: 1.5, 2: Infinity };
 import type { StageDef } from './challenge';
 import { ChallengeProgress } from './progress';
+import { dayNumber, prepareDailyAsync, type DailyChallenge } from './daily';
+import { DailyStore, betterRecord, type DailyView } from './dailyStore';
+import { botPlay } from './solver';
 import type { HudModel } from './hud';
 import type { LobbySeatView } from './lobby';
 import { MAX_CORNER_BOTS, type GameMode } from './modes';
@@ -86,7 +105,8 @@ type LastStart =
   | { readonly kind: 'mode'; readonly mode: PlayMode }
   | { readonly kind: 'party'; readonly config: PartyConfig }
   | { readonly kind: 'quick' }
-  | { readonly kind: 'challenge'; readonly id: string };
+  | { readonly kind: 'challenge'; readonly id: string }
+  | { readonly kind: 'daily' };
 
 export interface ShellOptions {
   readonly test: boolean;
@@ -101,6 +121,8 @@ export interface ShellOptions {
   /** Session overrides (not saved). */
   readonly speed: GameSpeed | null;
   readonly reducedMotion: boolean | null;
+  /** Daily challenge date override (`?date`). */
+  readonly date: CalendarDate | null;
   readonly clock?: Clock;
 }
 
@@ -109,6 +131,7 @@ export interface ShellDeps {
   readonly settings?: SettingsStore;
   readonly entitlements?: MockEntitlements;
   readonly progress?: ChallengeProgress;
+  readonly daily?: DailyStore;
   readonly partyStore?: PartyStore;
   readonly audio?: GameAudio;
   readonly haptics?: HapticsPort;
@@ -142,6 +165,14 @@ export interface GameTestHook {
   arena(): string;
   /** Starts challenge level `id` directly (as the map's Play button does). */
   startChallenge(id: string): void;
+  /** Daily challenge: prepares today's (or `?date`'s) challenge; resolves with its outline. */
+  prepareDaily(): Promise<{ levelId: string; objective: string; modifier: string; seed: number }>;
+  /** Starts an attempt at the prepared daily challenge. */
+  startDaily(): void;
+  /** The bot's winning input log (RLE) of the prepared daily challenge (scripted e2e play). */
+  dailySolution(): number[];
+  /** Today's daily progress: official attempt, best, streak. */
+  dailyView(): DailyView;
   /** Records a best-stars result (to unlock the following levels in tests). */
   recordStars(id: string, stars: number): void;
   /** Challenge: objective progress and status of the running challenge (null otherwise). */
@@ -222,6 +253,7 @@ export function parseShellOptions(search: string): ShellOptions {
     bots: intParam(q, 'bots', 0, MAX_CORNER_BOTS) ?? 0,
     speed: GAME_SPEEDS.find((v) => String(v) === q.get('speed')) ?? null,
     reducedMotion: q.get('motion') === 'reduced' ? true : q.get('motion') === 'full' ? false : null,
+    date: parseDate(q.get('date')),
   };
 }
 
@@ -242,6 +274,9 @@ export class GameShell {
   private last: LastStart | null = null;
   readonly entitlements: MockEntitlements;
   readonly progress: ChallengeProgress;
+  readonly daily: DailyStore;
+  private dailyCache: { day: number; promise: Promise<DailyChallenge> } | null = null;
+  private dailyReady: DailyChallenge | null = null;
   private readonly partyStore: PartyStore;
   private readonly clock: Clock;
   readonly pointerClock = { now: 0 };
@@ -270,6 +305,7 @@ export class GameShell {
     this.bots = options.bots;
     this.entitlements = deps.entitlements ?? mockEntitlements(options.plus);
     this.progress = deps.progress ?? new ChallengeProgress(webStore());
+    this.daily = deps.daily ?? new DailyStore(webStore());
     this.partyStore = deps.partyStore ?? new PartyStore(webStore());
     this.settings =
       deps.settings ?? new SettingsStore(webStore(), defaultSettings(prefersReducedMotion()));
@@ -588,6 +624,77 @@ export class GameShell {
     this.toPlaying();
   }
 
+  /** Today's day number (platform clock, or the `?date` override). */
+  today(): number {
+    return dayNumber(this.options.date ?? localDate(this.clock));
+  }
+
+  /**
+   * Today's daily challenge, proven winnable (the bot search runs once per day and its result is
+   * remembered across restarts).
+   */
+  prepareDaily(): Promise<DailyChallenge> {
+    const day = this.today();
+    if (this.dailyCache?.day === day) return this.dailyCache.promise;
+    const promise = prepareDailyAsync(day, this.daily.pickFor(day)).then(({ challenge, pick }) => {
+      if (this.daily.pickFor(day) === null) this.daily.rememberPick(day, pick);
+      this.dailyReady = challenge;
+      return challenge;
+    });
+    this.dailyCache = { day, promise };
+    return promise;
+  }
+
+  /** Today's daily challenge if {@link prepareDaily} has finished. */
+  preparedDaily(): DailyChallenge | null {
+    const ready = this.dailyReady;
+    return ready && ready.day === this.today() ? ready : null;
+  }
+
+  /** Starts an attempt at today's daily challenge (it must be prepared). */
+  startDaily(): void {
+    const daily = this.preparedDaily();
+    if (!daily) return;
+    this.last = { kind: 'daily' };
+    const day = daily.day;
+    const official = this.daily.beginAttempt(day);
+    this.replaceSession(
+      new GameSession(
+        this.app,
+        this.arenaTex,
+        this.controlTex,
+        {
+          mode: 'challenge',
+          seed: daily.tuning.seeds[0] ?? 1,
+          arena: (daily.level.stages[0] as StageDef).arena,
+          winsToMatch: 1,
+          challenge: { level: daily.level, tuning: daily.tuning },
+          ...this.commonOptions(),
+          feel: this.sessionFeel('challenge'),
+        },
+        {
+          onSnapshot: (snapshot) => this.set({ snapshot }),
+          onChallengeOver: (result) => {
+            this.session?.disableInput();
+            const record = { won: result.won, stars: result.stars, ticks: result.stats.ticks };
+            const newBest = betterRecord(record, this.daily.view(day).best) && result.won;
+            this.daily.finish(day, official, record);
+            this.pacer.setCap(MENU_FPS_CAP);
+            this.audio.menu();
+            this.set({
+              screen: 'challengeResult',
+              challengeResult: {
+                ...result,
+                daily: { day, official, newBest, view: this.daily.view(day) },
+              },
+            });
+          },
+        },
+      ),
+    );
+    this.toPlaying();
+  }
+
   /** The level after the one just played, if it can be played. */
   nextChallengeId(): string | null {
     const current = this.last?.kind === 'challenge' ? this.last.id : null;
@@ -617,6 +724,9 @@ export class GameShell {
         break;
       case 'challenge':
         this.startChallenge(last.id);
+        break;
+      case 'daily':
+        this.startDaily();
         break;
     }
   }
@@ -764,6 +874,23 @@ export class GameShell {
       setPlus: (plus) => this.entitlements.setPlus(plus),
       arena: () => current().options.arena.id,
       startChallenge: (id) => this.startChallenge(id),
+      prepareDaily: async () => {
+        const daily = await this.prepareDaily();
+        const stage = daily.level.stages[0] as StageDef;
+        return {
+          levelId: daily.level.id,
+          objective: stage.objective.type,
+          modifier: daily.modifier,
+          seed: daily.tuning.seeds[0] ?? 0,
+        };
+      },
+      startDaily: () => this.startDaily(),
+      dailySolution: () => {
+        const daily = this.preparedDaily();
+        if (!daily) throw new Error('daily challenge not prepared');
+        return rleEncode(botPlay(daily.level, 0, daily.tuning.seeds[0] ?? 0).bytes);
+      },
+      dailyView: () => this.daily.view(this.today()),
       recordStars: (id, stars) => {
         this.progress.record(id, stars);
       },

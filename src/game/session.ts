@@ -58,6 +58,7 @@ import {
   type RunStatus,
   type StarCond,
 } from './challenge';
+import type { DailyOutcome } from './dailyStore';
 import { HapticsDirector } from './haptics';
 import { HudSignature, RESULT_DELAY_TICKS, hudModel, type HudModel } from './hud';
 import { LobbyTracker, type LobbySeatView } from './lobby';
@@ -151,6 +152,8 @@ export interface ChallengeResult {
   readonly stars: number;
   /** The two extra star conditions (stars 2 and 3) and whether each is met. */
   readonly conds: ReadonlyArray<{ readonly cond: StarCond; readonly met: boolean }>;
+  /** Daily challenge only (added by the shell): official / practice, best and streak. */
+  readonly daily?: DailyOutcome;
 }
 
 export interface SessionCallbacks {

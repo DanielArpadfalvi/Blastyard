@@ -13,26 +13,9 @@
 // seat 0, which is exactly what `scripts/validate-content.ts` does in `npm run check`.
 
 import { writeFileSync } from 'node:fs';
-import {
-  BotLevel,
-  MAX_SEATS,
-  botInput,
-  createState,
-  rleEncode,
-  setBotLevel,
-  step,
-  type InputRLE,
-} from '../src/core';
-import {
-  ChallengeTracker,
-  PLAYER_SEAT,
-  replayLevel,
-  stageSetup,
-  type LevelDef,
-  type RunStats,
-  type StarCond,
-  type StarKind,
-} from '../src/game/challenge';
+import { rleEncode, type InputRLE } from '../src/core';
+import { replayLevel, type LevelDef, type RunStats, type StarCond } from '../src/game/challenge';
+import { botPlay, qualifies, starsFromRun } from '../src/game/solver';
 import { LEVELS } from '../src/content/challenges/levels';
 
 interface Args {
@@ -54,90 +37,6 @@ function parseArgs(argv: readonly string[]): Args {
   return args;
 }
 
-/** One stage of `level` as a level of its own (so the tracker measures just that stage). */
-function singleStage(level: LevelDef, k: number): LevelDef {
-  return { ...level, stages: [level.stages[k] as LevelDef['stages'][number]] };
-}
-
-interface StageRun {
-  readonly won: boolean;
-  readonly bytes: number[];
-  readonly stats: RunStats;
-  readonly reason: string;
-}
-
-/** The bot plays stage `k` of `level` with `seed`; the player's input bytes are recorded. */
-function botPlay(level: LevelDef, k: number, seed: number): StageRun {
-  const single = singleStage(level, k);
-  const state = createState(stageSetup(level, k, seed));
-  const tracker = new ChallengeTracker(single);
-  const objective = single.stages[0]!.objective;
-  const rules = single.stages[0]!.rules;
-  const roundTicks = (rules?.roundSeconds ?? 0) * 60;
-  const cap =
-    180 +
-    (objective.seconds !== undefined ? objective.seconds * 60 + 60 : 0) +
-    (roundTicks > 0 ? roundTicks + 4000 : 7200);
-  const inputs = new Uint8Array(MAX_SEATS);
-  const bytes: number[] = [];
-  let events = step(state, inputs);
-  bytes.push(0);
-  tracker.observe(state, events);
-  while (tracker.status === 'running' && bytes.length < cap) {
-    setBotLevel(state, PLAYER_SEAT, BotLevel.EXPERT);
-    const input = botInput(state, PLAYER_SEAT);
-    setBotLevel(state, PLAYER_SEAT, BotLevel.NONE);
-    inputs[PLAYER_SEAT] = input;
-    bytes.push(input);
-    events = step(state, inputs);
-    tracker.observe(state, events);
-  }
-  const won = tracker.status === 'won';
-  return {
-    won,
-    bytes,
-    stats: tracker.totals(),
-    reason: won ? 'won' : (tracker.lossReason ?? 'cap'),
-  };
-}
-
-function roundUp5(n: number): number {
-  return Math.ceil(n / 5) * 5;
-}
-
-function condFor(kind: StarKind, stats: RunStats, strict: boolean, limit: number | null): StarCond {
-  const seconds = stats.ticks / 60;
-  switch (kind) {
-    case 'time': {
-      // The bot is a perfect runner: leave human headroom (star 2 about twice its time).
-      let value = strict ? roundUp5(seconds * 1.4) : roundUp5(seconds * 2);
-      value = Math.max(value, Math.ceil(seconds) + (strict ? 4 : 10));
-      if (limit !== null) value = Math.min(value, Math.floor(limit * (strict ? 0.6 : 0.85)));
-      return { kind: 'time', seconds: Math.max(value, Math.ceil(seconds) + 2) };
-    }
-    case 'bombs':
-      return {
-        kind: 'bombs',
-        max: strict ? Math.ceil(stats.bombs * 1.3) + 2 : Math.ceil(stats.bombs * 1.8) + 3,
-      };
-    case 'pickups':
-      return {
-        kind: 'pickups',
-        min: Math.max(1, Math.floor(stats.pickups * (strict ? 0.8 : 0.5))),
-      };
-    case 'noDamage':
-      return { kind: 'noDamage' };
-  }
-}
-
-/** Does this run qualify as a reference for the level's star conditions? */
-function qualifies(level: LevelDef, run: StageRun): boolean {
-  if (!run.won) return false;
-  if (level.stars.includes('noDamage') && run.stats.damage > 0) return false;
-  if (level.stars.includes('pickups') && run.stats.pickups < 1) return false;
-  return true;
-}
-
 interface Solved {
   readonly seeds: number[];
   readonly logs: InputRLE[];
@@ -150,8 +49,6 @@ function solveLevel(level: LevelDef, args: Args): Solved | null {
   const seeds: number[] = [];
   const logs: InputRLE[] = [];
   for (let k = 0; k < level.stages.length; k++) {
-    const stage = level.stages[k]!;
-    const limit = stage.objective.seconds;
     const base = (level.world * 100 + level.index) * 1000 + k * 100;
     let found = false;
     const tally: string[] = [];
@@ -166,15 +63,8 @@ function solveLevel(level: LevelDef, args: Args): Solved | null {
             `pickups ${run.stats.pickups} dmg ${run.stats.damage} kills ${run.stats.kills}`,
         );
       }
-      if (!qualifies(level, run)) continue;
       // The reference leaves room: at most 60 % of the objective's time limit.
-      if (
-        limit !== undefined &&
-        stage.objective.type !== 'survive' &&
-        run.stats.ticks > limit * 36
-      ) {
-        continue;
-      }
+      if (!qualifies(level, k, run)) continue;
       seeds.push(seed);
       logs.push(rleEncode(run.bytes));
       found = true;
@@ -209,14 +99,7 @@ function solveLevel(level: LevelDef, args: Args): Solved | null {
     console.log(`  ${level.id}: trimmed solution does not replay`);
     return null;
   }
-  const limits = level.stages.map((st) => st.objective.seconds ?? null);
-  const limit = limits.every((l) => l !== null)
-    ? limits.reduce<number>((a, l) => a + (l ?? 0), 0)
-    : null;
-  const stars: [StarCond, StarCond] = [
-    condFor(level.stars[0], again.stats, false, limit),
-    condFor(level.stars[1], again.stats, true, limit),
-  ];
+  const stars = starsFromRun(level, again.stats);
   // Re-hash at the winning ticks (the hashes in `again` are those of the trimmed replay).
   return { seeds, logs: trimmed, hashes: [...again.hashes], stars, stats: again.stats };
 }

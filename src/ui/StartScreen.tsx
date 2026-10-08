@@ -13,6 +13,9 @@ export interface StartScreenProps {
   onQuick?: () => void;
   /** Challenge map (T5.2). */
   onChallenges?: () => void;
+  /** Daily challenge card (T5.3) and the current streak. */
+  onDaily?: () => void;
+  dailyStreak?: number;
   /** Bot level of Quick Match and its change handler. */
   quickLevel?: number;
   onQuickLevel?: (level: number) => void;
@@ -24,12 +27,14 @@ export interface StartScreenProps {
   onSettings?: () => void;
 }
 
-/** Minimal start screen: Quick Match, Party, Challenges and the two first-playable modes. */
+/** Minimal start screen: Quick Match, Party, Challenges, Daily and the first-playable modes. */
 export function StartScreen({
   onStart,
   onParty,
   onQuick,
   onChallenges,
+  onDaily,
+  dailyStreak = 0,
   quickLevel = BotLevel.NORMAL,
   onQuickLevel,
   spike = false,
@@ -95,6 +100,14 @@ export function StartScreen({
             >
               <span class="mode-name">{t('modeChallenges')}</span>
               <span class="mode-hint">{t('modeChallengesHint')}</span>
+            </button>
+          )}
+          {onDaily && (
+            <button type="button" class="mode-button" data-testid="start-daily" onClick={onDaily}>
+              <span class="mode-name">{t('modeDaily')}</span>
+              <span class="mode-hint">
+                {dailyStreak > 0 ? t('modeDailyStreak', { n: dailyStreak }) : t('modeDailyHint')}
+              </span>
             </button>
           )}
         </div>
