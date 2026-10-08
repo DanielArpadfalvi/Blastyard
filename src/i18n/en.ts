@@ -167,6 +167,8 @@ export const en = {
   lobbyHold: 'Hold still for 1 s to get ready',
   lobbyReady: 'Ready!',
   lobbyControls: 'Drag: move · Tap: pop',
+  padBadge: 'Controller',
+  lobbyPadControls: 'Stick / D-pad: move · A: pop · hold A: ready',
   turnSeat: 'Turn this seat',
   pauseHold: 'Hold to pause',
   paused: 'Paused',

@@ -169,6 +169,8 @@ export const hu: Record<TranslationKey, string> = {
   lobbyHold: 'Tartsd az ujjad 1 mp-ig mozdulatlanul: kész',
   lobbyReady: 'Kész!',
   lobbyControls: 'Húzd: mozgás · Koppints: bomba',
+  padBadge: 'Kontroller',
+  lobbyPadControls: 'Kar / D-pad: mozgás · A: bomba · tartsd az A-t: kész',
   turnSeat: 'Hely elforgatása',
   pauseHold: 'Tartsd nyomva a szünethez',
   paused: 'Szünet',

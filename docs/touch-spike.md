@@ -80,3 +80,37 @@ face-off (FO) and corners (4C).
   `preferredScreenEdgesDeferringSystemGestures` in M7.
 - If the 4-corner zones are cramped on phones: update PLAN §1.3/§1.5 (e.g. corners only
   recommended on tablets, bigger strips via `MIN_STRIP_MM`), then tick T2.4.
+
+## 4. Gamepad spike (T5.5, desk research 2026-10-08)
+
+Question: can the app read game controllers through the web Gamepad API inside the native
+shells (Android System WebView, iOS WKWebView)?
+
+**Verdict: viable on both platforms → implemented** (`src/input/gamepad.ts`, seat claims in the
+lobby and in every mode). Findings:
+
+- **Android (System WebView, Chromium):** `navigator.getGamepads()` is supported (MDN compat data
+  lists WebView Android). Like Chrome, a controller only shows up after one of its buttons was
+  pressed; that matches our claim-by-press flow. Needs a secure context: Capacitor serves the app
+  from `https://localhost` (default `androidScheme: 'https'`), so this holds.
+- **iOS (WKWebView):** supported since iOS 10.3 per MDN, but WebKit only exposes controllers to a
+  WKWebView that is the **first responder** (WebKit team answer quoted in
+  apache/cordova-ios#1397; Safari does this itself, embedding apps often do not, which explains
+  the "empty array" reports, e.g. WebKit bugs 205448 / 269292). → **T7.1 requirement:** in the iOS
+  shell, make the Capacitor `WKWebView` the first responder once it appears (custom
+  `CAPBridgeViewController` subclass calling `webView?.becomeFirstResponder()` in
+  `viewDidAppear`). The page is served from `capacitor://localhost`, a secure context.
+- No plugin is needed; nothing in `src/platform` changes. Haptic rumble (`vibrationActuator`) is
+  not used.
+
+**Owner check on devices (with T7.3 builds):** pair an Xbox / PlayStation / MFi controller, open
+Quick match, press A → the seat panel shows the controller badge; stick / D-pad steers, A pops.
+Record the result per device:
+
+| Device / OS | Controller | Detected after press? | Steers + pops? | Notes |
+| ----------- | ---------- | --------------------- | -------------- | ----- |
+| iPhone:     |            |                       |                |       |
+| Android:    |            |                       |                |       |
+| Tablet:     |            |                       |                |       |
+
+Not done yet (later polish): menu navigation with a controller, Start = pause, rumble.

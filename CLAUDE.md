@@ -2,7 +2,9 @@
 
 Top-down, grid-based blast party game for 1–4 players on **one phone or tablet** (device laid flat, each player owns a control zone at the screen edge), plus bots, a challenge campaign and a daily challenge. Landscape only. Online private rooms with rollback netcode come in 1.1. Plan: `docs/PLAN.md` (Hungarian). Task list / status: `docs/TASKS.md`.
 
-**Starting a new session? Read `docs/HANDOFF.md` first if it exists** (current state, next steps, local setup).
+**Starting a new session? Read `docs/HANDOFF.md` first** (current state, next steps, local setup).
+
+**Session handoff (owner rule, always):** keep `docs/HANDOFF.md` current so any new session can pick up the work without the owner explaining where things stopped. After every finished task, and before the last push of a session, update it with: date, what was done (task ids, key files), current state of `npm run check` / e2e (known failures and why), decisions taken and their reasons, open questions / owner tasks, and the exact next step. Commit it together with the work it describes.
 
 ## Stack
 Vite + TypeScript (strict) · PixiJS v8 (gameplay canvas) · Preact (DOM UI overlay) · Capacitor 8 (iOS/Android) · Vitest · Playwright.

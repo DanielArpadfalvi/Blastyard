@@ -34,6 +34,7 @@ import {
   type SimState,
 } from '../core';
 import { InputController } from '../input/controller';
+import type { GamepadSeats } from '../input/gamepad';
 import { attachKeyboardInput, attachPointerInput, type PointerClock } from '../input/dom';
 import { KeyboardSeats } from '../input/keyboard';
 import { nextOrientation, type SeatOrientation } from '../input/rotation';
@@ -106,6 +107,8 @@ export interface SessionOptions {
   readonly speed?: number;
   /** Sound and haptics; a session without them is silent (the attract match). */
   readonly feel?: SessionFeel;
+  /** Controllers (T5.5; shared by the shell so claims last across matches). */
+  readonly gamepads?: GamepadSeats;
 }
 
 export interface SessionFeel {
@@ -136,6 +139,8 @@ export interface SessionSnapshot {
   /** Lobby only: join / ready state of every human seat. */
   readonly lobby: readonly LobbySeatView[] | null;
   readonly challenge: ChallengeHud | null;
+  /** Seats steered by a game controller. */
+  readonly gamepadSeats: readonly number[];
 }
 
 export interface MatchResult {
@@ -208,6 +213,7 @@ export class GameSession {
   readonly kind: LayoutKind;
   private runnerRef: MatchRunner;
   private readonly keyboard: KeyboardSeats;
+  private readonly pads: GamepadSeats | null;
   private readonly controller: InputController;
   private view: ArenaView;
   private readonly controls: ControlsView;
@@ -257,7 +263,16 @@ export class GameSession {
       : null;
     const state = this.initialState();
     this.keyboard = new KeyboardSeats(keyBindingsFor(mode, this.plan));
-    this.controller = new InputController([this.zones, this.keyboard]);
+    const pads = mode === 'attract' ? undefined : options.gamepads;
+    this.pads = pads ?? null;
+    this.controller = new InputController(
+      pads ? [this.zones, this.keyboard, pads] : [this.zones, this.keyboard],
+    );
+    pads?.setSeats(
+      this.plan
+        .filter((p) => p.kind === 'human')
+        .map((p) => ({ seat: p.seat, orientation: p.orientation })),
+    );
     this.view = new ArenaView(arenaTex, options.fx);
     this.view.bindArena(state, this.stageArena().theme);
     this.controls = new ControlsView(controlTex, arenaTex);
@@ -385,6 +400,7 @@ export class GameSession {
     if (paused) {
       this.zones.reset();
       this.keyboard.reset();
+      this.pads?.reset();
     }
     this.present();
   }
@@ -401,6 +417,7 @@ export class GameSession {
     if (!p) return;
     this.plan[seat] = { ...p, orientation };
     this.orientVersion++;
+    this.pads?.setOrientation(seat, orientation);
     this.layoutKey = '';
     this.zones.reset();
     this.present();
@@ -537,7 +554,8 @@ export class GameSession {
     if (lobby) {
       for (const p of this.plan) {
         if (p.kind !== 'human') continue;
-        lobby.update(p.seat, this.zones.touching(p.seat), this.lastInputs[p.seat] as number);
+        const holding = this.zones.touching(p.seat) || (this.pads?.holding(p.seat) ?? false);
+        lobby.update(p.seat, holding, this.lastInputs[p.seat] as number);
       }
       if (lobby.tickStart() && !this.lobbyDone) {
         this.lobbyDone = true;
@@ -600,7 +618,7 @@ export class GameSession {
     // Allocation-free per frame; the HUD model is only built when something visible changed.
     const state = this.runnerRef.state;
     const changed = this.hudSig.update(state);
-    const extra = `${+this.userPaused}|${this.lobbyTracker?.key() ?? ''}|${this.challengeKey()}|${this.orientVersion}`;
+    const extra = `${+this.userPaused}|${this.lobbyTracker?.key() ?? ''}|${this.challengeKey()}|${this.orientVersion}|${this.pads?.version ?? 0}`;
     if (changed || this.snapshotKey !== this.layoutKey || extra !== this.extraKey) {
       this.snapshotKey = this.layoutKey;
       this.extraKey = extra;
@@ -616,6 +634,7 @@ export class GameSession {
         teams: this.options.party?.teams ?? null,
         paused: this.userPaused,
         lobby: this.lobbyTracker ? this.lobbyTracker.views() : null,
+        gamepadSeats: this.pads?.assignedSeats() ?? [],
         challenge:
           tracker && challenge
             ? {

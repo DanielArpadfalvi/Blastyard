@@ -1,7 +1,21 @@
 export { InputController } from './controller';
-export { attachKeyboardInput, attachPointerInput, eventTimeClock, type PointerClock } from './dom';
+export {
+  attachKeyboardInput,
+  attachPointerInput,
+  eventTimeClock,
+  type PointerClock,
+  webGamepads,
+} from './dom';
 export { emptyFrames, type InputSource, MAX_SEATS, type SeatFrame } from './frame';
 export { DEFAULT_DP_PER_MM, distanceToRect, mmToDp, type Rect, rectContains } from './geometry';
+export {
+  GamepadSeats,
+  padDirection,
+  type PadReader,
+  type PadSnapshot,
+  STICK_MAIN,
+  STICK_SECONDARY,
+} from './gamepad';
 export { DEFAULT_TAP_PARAMS, isTap, type TapParams } from './gestures';
 export { DEFAULT_KEY_BINDINGS, type KeyBinding, KeyboardSeats } from './keyboard';
 export {

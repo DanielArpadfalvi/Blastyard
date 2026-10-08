@@ -35,6 +35,8 @@ import {
   stateHash,
   type ArenaDef,
 } from '../core';
+import { webGamepads } from '../input/dom';
+import { GamepadSeats } from '../input/gamepad';
 import type { SeatOrientation } from '../input/rotation';
 import type { ZoneSpec } from '../input/zones';
 import {
@@ -143,6 +145,7 @@ export interface ShellDeps {
   readonly progress?: ChallengeProgress;
   readonly daily?: DailyStore;
   readonly tips?: TipsStore;
+  readonly gamepads?: GamepadSeats;
   readonly partyStore?: PartyStore;
   readonly audio?: GameAudio;
   readonly haptics?: HapticsPort;
@@ -184,6 +187,8 @@ export interface GameTestHook {
   dailySolution(): number[];
   /** Today's daily progress: official attempt, best, streak. */
   dailyView(): DailyView;
+  /** Seats a game controller currently steers. */
+  gamepadSeats(): number[];
   /** Tutorial: starts it (at step `stage`, 0-based). */
   startTutorial(stage?: number): void;
   /** Tutorial done flag and the first-time tips already shown. */
@@ -295,6 +300,8 @@ export class GameShell {
   readonly progress: ChallengeProgress;
   readonly daily: DailyStore;
   readonly tips: TipsStore;
+  /** Game controllers; their seat claims last across matches (T5.5). */
+  readonly gamepads: GamepadSeats;
   private dailyCache: { day: number; promise: Promise<DailyChallenge> } | null = null;
   private dailyReady: DailyChallenge | null = null;
   private readonly partyStore: PartyStore;
@@ -327,6 +334,7 @@ export class GameShell {
     this.progress = deps.progress ?? new ChallengeProgress(webStore());
     this.daily = deps.daily ?? new DailyStore(webStore());
     this.tips = deps.tips ?? new TipsStore(webStore());
+    this.gamepads = deps.gamepads ?? new GamepadSeats(webGamepads());
     this.partyStore = deps.partyStore ?? new PartyStore(webStore());
     this.settings =
       deps.settings ?? new SettingsStore(webStore(), defaultSettings(prefersReducedMotion()));
@@ -482,6 +490,7 @@ export class GameShell {
           fx: this.fxSettings(),
           speed: speedFactor(this.settings.get().gameSpeed),
           feel: this.sessionFeel(mode),
+          gamepads: this.gamepads,
         },
         this.matchCallbacks(),
       ),
@@ -494,8 +503,10 @@ export class GameShell {
     pointerClock?: () => number;
     fx: FxSettings;
     speed: number;
+    gamepads: GamepadSeats;
   } {
     return {
+      gamepads: this.gamepads,
       manualClock: this.options.manualClock,
       ...(this.options.manualClock ? { pointerClock: () => this.pointerClock.now } : {}),
       fx: this.fxSettings(),
@@ -973,6 +984,7 @@ export class GameShell {
       },
       startDaily: () => this.startDaily(),
       startTutorial: (stage) => this.startTutorial(stage ?? 0),
+      gamepadSeats: () => this.gamepads.assignedSeats(),
       tips: () => ({
         tutorialDone: this.tips.tutorialDone,
         shown: TIP_IDS.filter((id) => this.tips.seen(id)),

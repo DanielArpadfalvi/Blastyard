@@ -1,3 +1,4 @@
+import type { PadReader } from './gamepad';
 import type { KeyboardSeats } from './keyboard';
 import type { TouchZones } from './zones';
 
@@ -68,5 +69,19 @@ export function attachKeyboardInput(keyboard: KeyboardSeats, target: Window = wi
     target.removeEventListener('keydown', down);
     target.removeEventListener('keyup', up);
     target.removeEventListener('blur', drop);
+  };
+}
+
+/**
+ * `navigator.getGamepads()` as a {@link PadReader} (empty where the Gamepad API is missing or
+ * blocked, e.g. an insecure context or a permissions policy).
+ */
+export function webGamepads(nav: Navigator | undefined = globalThis.navigator): PadReader {
+  return () => {
+    try {
+      return nav?.getGamepads?.() ?? [];
+    } catch {
+      return [];
+    }
   };
 }

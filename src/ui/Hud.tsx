@@ -142,6 +142,7 @@ function SeatPanel(props: {
       <div class="seat-head">
         <SeatBadge seat={seat.seat} />
         <span class="seat-name">{seatName(snapshot.plan, seat.seat)}</span>
+        {snapshot.gamepadSeats.includes(seat.seat) && <PadBadge seat={seat.seat} />}
         {snapshot.teams && (
           <span class="team-tag" data-testid={`team-tag-${seat.seat}`}>
             {t('teamTag', { n: (snapshot.teams[seat.seat] ?? 0) + 1 })}
@@ -211,6 +212,29 @@ function ArrowIcon() {
   );
 }
 
+/** A small game-controller glyph: the seat is steered by a gamepad (T5.5). */
+function PadBadge({ seat }: { seat: number }) {
+  return (
+    <span
+      class="pad-badge"
+      role="img"
+      aria-label={t('padBadge')}
+      data-testid={`pad-badge-${seat}`}
+      title={t('padBadge')}
+    >
+      <svg viewBox="0 0 24 16" width="20" height="13" aria-hidden="true">
+        <path
+          d="M6 1h12a5 5 0 0 1 5 5l-1 6a3 3 0 0 1-5 1l-2-2H9l-2 2a3 3 0 0 1-5-1L1 6a5 5 0 0 1 5-5z"
+          fill="currentColor"
+        />
+        <path d="M6 5v4M4 7h4" stroke="#2b2118" stroke-width="1.6" stroke-linecap="round" />
+        <circle cx="17" cy="6" r="1.2" fill="#2b2118" />
+        <circle cx="19" cy="8.5" r="1.2" fill="#2b2118" />
+      </svg>
+    </span>
+  );
+}
+
 function LobbySeat(props: {
   snapshot: SessionSnapshot;
   plan: SeatPlan;
@@ -220,6 +244,7 @@ function LobbySeat(props: {
   const { snapshot, plan, view, onTurn } = props;
   const place = lobbyPlace(snapshot, plan);
   const state = view.ready ? 'ready' : view.joined ? 'joined' : 'idle';
+  const pad = snapshot.gamepadSeats.includes(plan.seat);
   return (
     <>
       <div
@@ -231,12 +256,13 @@ function LobbySeat(props: {
         <div class="seat-head">
           <SeatBadge seat={plan.seat} />
           <span class="seat-name">{seatName(snapshot.plan, plan.seat)}</span>
+          {pad && <PadBadge seat={plan.seat} />}
         </div>
         <span class="lobby-msg">{t(LOBBY_MESSAGE[state])}</span>
         <div class="ready-bar" aria-hidden="true">
           <i style={{ width: `${Math.round((view.ready ? 1 : view.progress) * 100)}%` }} />
         </div>
-        <span class="lobby-tip">{t('lobbyControls')}</span>
+        <span class="lobby-tip">{t(pad ? 'lobbyPadControls' : 'lobbyControls')}</span>
       </div>
       {snapshot.kind !== 'solo' && (
         <button

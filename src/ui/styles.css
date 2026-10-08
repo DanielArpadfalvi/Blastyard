@@ -1267,3 +1267,10 @@ body {
 .mode-button.mode-new {
   box-shadow: 0 0 0 3px #ffd23f;
 }
+
+/* Game controller badge (T5.5) */
+.pad-badge {
+  display: inline-flex;
+  align-items: center;
+  color: #ffd23f;
+}
