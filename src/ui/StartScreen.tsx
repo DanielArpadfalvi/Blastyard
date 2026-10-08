@@ -81,17 +81,33 @@ export function StartScreen({
       <div class="card start-card">
         <h1 class="title">{t('appTitle')}</h1>
         <p class="tagline">{t('tagline')}</p>
-        <div class="mode-buttons">
+        <div class="start-grid">
+          {onParty && (
+            <button
+              type="button"
+              class="mode-button tile hero"
+              data-testid="start-party"
+              onClick={onParty}
+            >
+              <span class="mode-name">{t('modeParty')}</span>
+              <span class="mode-hint">{t('modePartyHint')}</span>
+            </button>
+          )}
           {onQuick && (
-            <div class="corner-group">
-              <button type="button" class="mode-button" data-testid="start-quick" onClick={onQuick}>
+            <div class="corner-group tile-group">
+              <button
+                type="button"
+                class="mode-button tile"
+                data-testid="start-quick"
+                onClick={onQuick}
+              >
                 <span class="mode-name">{t('modeQuick')}</span>
                 <span class="mode-hint">{t('modeQuickHint')}</span>
               </button>
               {onQuickLevel && (
                 <button
                   type="button"
-                  class="bots-toggle"
+                  class="bots-toggle tile-strip"
                   data-testid="quick-level"
                   onClick={() => onQuickLevel((quickLevel % BotLevel.EXPERT) + 1)}
                 >
@@ -100,16 +116,10 @@ export function StartScreen({
               )}
             </div>
           )}
-          {onParty && (
-            <button type="button" class="mode-button" data-testid="start-party" onClick={onParty}>
-              <span class="mode-name">{t('modeParty')}</span>
-              <span class="mode-hint">{t('modePartyHint')}</span>
-            </button>
-          )}
           {onChallenges && (
             <button
               type="button"
-              class="mode-button"
+              class="mode-button tile"
               data-testid="start-challenges"
               onClick={onChallenges}
             >
@@ -118,7 +128,12 @@ export function StartScreen({
             </button>
           )}
           {onDaily && (
-            <button type="button" class="mode-button" data-testid="start-daily" onClick={onDaily}>
+            <button
+              type="button"
+              class="mode-button tile"
+              data-testid="start-daily"
+              onClick={onDaily}
+            >
               <span class="mode-name">{t('modeDaily')}</span>
               <span class="mode-hint">
                 {dailyStreak > 0 ? t('modeDailyStreak', { n: dailyStreak }) : t('modeDailyHint')}

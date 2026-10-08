@@ -20,6 +20,11 @@ every finished task (rule in `CLAUDE.md`).
   `docs/store-privacy-answers.md`; trademark guard in `tests/unit/storeListing.test.ts`.
 - **T9.2 store screenshots** – `npm run build && npm run store:frames` (50 framed PNGs,
   EN/HU × 5 sizes × 5 scenes, `--verify` for byte equality); manual workflow `store-frames.yml`.
+- **Menu redesign** (owner request: the rounded pill boxes looked cheap) – `src/ui/styles.css`:
+  design tokens in `:root` (`--ink`, `--panel`, `--accent`, `--teal`, `--chamfer`), cut-corner
+  plates instead of pills, hazard stripe on every card, italic uppercase display type, flat
+  segmented controls; start screen = Party hero tile + 3 mode tiles + secondary row
+  (`.start-grid`, `src/ui/StartScreen.tsx`). All test ids unchanged; HU overflow checks green.
 - **T9.3 site** – `scripts/site.ts` / `siteContent.ts` (`npm run site`), built by `pages.yml`
   into `/Blastyard/site/`; app links per language (`siteUrl`).
 - Earlier in this branch: T5.3–T5.5, M6, M7 (see `docs/TASKS.md` "Done:" notes).
@@ -44,6 +49,9 @@ every finished task (rule in `CLAUDE.md`).
   report-only in CI, or run it on a GPU runner).
 
 ### Decisions worth knowing
+- UI style: no rounded boxes (`--radius: 2px`); new components use `clip-path: var(--chamfer)` /
+  `var(--chamfer-sm)` and `box-shadow: inset 0 0 0 1px var(--line)` for the hairline; primary
+  action = `--accent` fill, secondary = `--panel-2` with a teal left bar.
 - Purchases: the web has no store (paywall says "store unavailable") except the mock under
   `?test` / `?store=`. Natively RevenueCat with the public key from the build env; products are
   fetched directly (no offerings). A custom party setup without Plus plays Classic (kept, not
