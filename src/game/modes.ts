@@ -328,3 +328,25 @@ export function zonesForPlan(
   });
   return { zones, arena, stickHints, left, right };
 }
+
+/** Height of a gesture-exclusion band (Android honours at most 200 dp per screen edge). */
+export const GESTURE_BAND = 200;
+
+/**
+ * Areas the system edge swipes (Android back / home) should leave alone (T7.1): per touch zone a
+ * band of {@link GESTURE_BAND} around where its stick starts, across the strip the stick lives in
+ * – drags begin there, bomb taps are not swipes. Empty for zone-less layouts.
+ */
+export function gestureBands(plan: ZonePlan): Rect[] {
+  return plan.zones.map((zone, i) => {
+    const hint = plan.stickHints[i] ?? { x: zone.rect.x + zone.rect.w / 2, y: zone.rect.y };
+    // A solo zone spans both strips: keep only the strip with the stick.
+    let area = zone.rect;
+    for (const strip of [plan.left, plan.right]) {
+      if (hint.x >= strip.x && hint.x <= strip.x + strip.w && strip.w < zone.rect.w) area = strip;
+    }
+    const h = Math.min(GESTURE_BAND, area.h);
+    const y = Math.min(Math.max(area.y, hint.y - h / 2), area.y + area.h - h);
+    return { x: area.x, y, w: area.w, h };
+  });
+}

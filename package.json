@@ -18,12 +18,16 @@
     "sim:bench": "node scripts/run-ts.mjs scripts/sim-bench.ts",
     "bot:league": "node scripts/run-ts.mjs scripts/bot-league.ts",
     "validate:content": "node scripts/run-ts.mjs scripts/validate-content.ts",
-    "solve:challenges": "node scripts/run-ts.mjs scripts/solve-challenges.ts"
+    "solve:challenges": "node scripts/run-ts.mjs scripts/solve-challenges.ts",
+    "native:config": "node scripts/run-ts.mjs scripts/native-config.ts",
+    "capacitor:sync:after": "npm run native:config"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
     "@capacitor/app": "^8.1.2",
     "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.3",
+    "@capacitor/screen-orientation": "^8.0.2",
     "pixi.js": "^8.22.0",
     "preact": "^11.0.0"
   },

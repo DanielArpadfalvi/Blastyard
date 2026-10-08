@@ -1,18 +1,21 @@
-package com.arpadfalvi.blastyard;
+package app.blastyard;
 
 import android.os.Bundle;
-import android.view.WindowManager;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
 
+/**
+ * The Capacitor activity: immersive full screen (no status / navigation bar until swiped in) and
+ * the app's own native plugin. Keep-awake and system-gesture exclusion are driven from the web
+ * layer through {@link BlastyardSystemPlugin} (only during lobby and matches).
+ */
 public class MainActivity extends BridgeActivity {
   @Override
   public void onCreate(Bundle savedInstanceState) {
+    registerPlugin(BlastyardSystemPlugin.class);
     super.onCreate(savedInstanceState);
-    // Keep the screen on while the game is in the foreground.
-    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     hideSystemBars();
   }
 

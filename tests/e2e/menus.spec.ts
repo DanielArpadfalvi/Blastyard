@@ -204,3 +204,29 @@ test.describe('flow at 1600×720', () => {
     await shot(page, 'left-handed-solo.png');
   });
 });
+
+test.describe('device behaviour (T7.1)', () => {
+  test.use({ viewport: { width: 1600, height: 720 }, deviceScaleFactor: 1 });
+
+  test('lobby and matches keep awake, lock orientation and guard the zones; menus release', async ({
+    page,
+  }) => {
+    await open(page, '&lang=en');
+    const system = () => page.evaluate(() => window.__blastyardGame!.system());
+    expect(await system()).toMatchObject({ awake: false, locked: false });
+    await page.getByTestId('start-faceoff').click();
+    await game.advance(page, 2);
+    const playing = await system();
+    expect(playing).toMatchObject({ awake: true, locked: true });
+    expect(playing.rects).toHaveLength(2);
+    expect(await back(page)).toBe(true); // pause: still in the match
+    expect(await system()).toMatchObject({ awake: true });
+    await page.getByTestId('pause-leave').click();
+    await expect(page.getByTestId('start-screen')).toBeVisible();
+    expect(await system()).toEqual({ awake: false, locked: false, rects: [] });
+    await page.getByTestId('start-party').click();
+    await page.getByTestId('party-start').click();
+    await expect(page.getByTestId('lobby-bar')).toBeVisible();
+    expect(await system()).toMatchObject({ awake: true, locked: true });
+  });
+});

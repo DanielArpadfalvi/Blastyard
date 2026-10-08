@@ -51,6 +51,7 @@ import { deviceLanguage, setLanguage } from '../i18n';
 import { mockEntitlements, type MockEntitlements } from '../platform/entitlement';
 import { onAppVisibility } from '../platform/lifecycle';
 import { platformBack, type BackPort } from '../platform/back';
+import { platformSystem, type SystemPort, type SystemState } from '../platform/system';
 import { webHaptics, type HapticKind, type HapticsPort } from '../platform/haptics';
 import { prefersReducedMotion } from '../platform/lifecycle';
 import { webStore, type KeyValueStore } from '../platform/storage';
@@ -81,7 +82,7 @@ import { DailyStore, betterRecord, type DailyView } from './dailyStore';
 import { botPlay } from './solver';
 import { TIP_IDS, TipsStore, type TipId } from './tips';
 import type { HudModel } from './hud';
-import type { ControlPrefs } from './modes';
+import { gestureBands, type ControlPrefs } from './modes';
 import type { LobbySeatView } from './lobby';
 import { MAX_CORNER_BOTS, type GameMode } from './modes';
 import { DEFAULT_PARTY, pickArena, resolveParty, type PartyConfig } from './party';
@@ -159,6 +160,7 @@ export interface ShellDeps {
   readonly tips?: TipsStore;
   readonly gamepads?: GamepadSeats;
   readonly back?: BackPort;
+  readonly system?: SystemPort & { state(): SystemState };
   readonly save?: KeyValueStore;
   readonly stats?: StatsStore;
   readonly looks?: LooksStore;
@@ -209,6 +211,8 @@ export interface GameTestHook {
   wornLooks(): Appearance[];
   /** Lifetime stats. */
   stats(): LifetimeStats;
+  /** What the device layer was last told: keep awake, orientation lock, gesture bands. */
+  system(): SystemState;
   /** Seats a game controller currently steers. */
   gamepadSeats(): number[];
   /** Tutorial: starts it (at step `stage`, 0-based). */
@@ -332,6 +336,8 @@ export class GameShell {
   readonly gamepads: GamepadSeats;
   /** System back action (Android back button; Escape on desktop) – the UI installs the handler. */
   readonly back: BackPort;
+  /** Keep-awake, orientation lock and gesture exclusion while a lobby / match is up (T7.1). */
+  private readonly system: SystemPort & { state(): SystemState };
   private dailyCache: { day: number; promise: Promise<DailyChallenge> } | null = null;
   private dailyReady: DailyChallenge | null = null;
   private readonly partyStore: PartyStore;
@@ -371,6 +377,7 @@ export class GameShell {
     this.looks = deps.looks ?? new LooksStore(save);
     this.gamepads = deps.gamepads ?? new GamepadSeats(webGamepads());
     this.back = deps.back ?? platformBack();
+    this.system = deps.system ?? platformSystem();
     this.partyStore = deps.partyStore ?? new PartyStore(save);
     this.settings =
       deps.settings ?? new SettingsStore(save, defaultSettings(prefersReducedMotion()));
@@ -1064,13 +1071,35 @@ export class GameShell {
     );
   }
 
+  private inPlay(): boolean {
+    return this.state.screen === 'playing' || this.state.screen === 'lobby';
+  }
+
+  /** Lobby and matches keep the screen on and the orientation fixed; menus release both. */
+  private syncSystem(): void {
+    const active = this.inPlay();
+    this.system.keepAwake(active);
+    this.system.lockOrientation(active);
+    if (!active) {
+      this.system.excludeGestures([]);
+    } else if (this.state.snapshot) this.syncGestures(this.state.snapshot);
+  }
+
+  private syncGestures(snapshot: SessionSnapshot): void {
+    const rects = gestureBands(snapshot.zones);
+    this.system.excludeGestures(rects);
+  }
+
   private replaceSession(next: GameSession): void {
     this.session?.destroy();
     this.session = next;
   }
 
   private set(patch: Partial<ShellState>): void {
+    const before = this.state.screen;
     this.state = { ...this.state, ...patch };
+    if (patch.screen !== undefined && patch.screen !== before) this.syncSystem();
+    if (patch.snapshot && this.inPlay()) this.syncGestures(patch.snapshot);
     for (const fn of this.listeners) fn(this.state);
   }
 
@@ -1121,6 +1150,7 @@ export class GameShell {
       back: () => this.back.trigger(),
       wornLooks: () => this.wornLooks(),
       stats: () => this.stats.get(),
+      system: () => this.system.state(),
       tips: () => ({
         tutorialDone: this.tips.tutorialDone,
         shown: TIP_IDS.filter((id) => this.tips.seen(id)),

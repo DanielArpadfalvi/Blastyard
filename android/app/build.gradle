@@ -1,10 +1,21 @@
 apply plugin: 'com.android.application'
 
+// The bundle id has exactly one source: `appId` in capacitor.config.ts. `npx cap sync` writes it
+// into the synced config below, which every build reads (CI and local builds always sync first).
+def capacitorConfigFile = file('src/main/assets/capacitor.config.json')
+if (!capacitorConfigFile.exists()) {
+    throw new GradleException("Missing ${capacitorConfigFile} – run `npx cap sync android` first.")
+}
+def blastyardAppId = new groovy.json.JsonSlurper().parse(capacitorConfigFile).appId
+
 android {
-    namespace = "com.arpadfalvi.blastyard"
+    // Java / resource namespace only (not the store id, which comes from the Capacitor config).
+    namespace = "app.blastyard"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.arpadfalvi.blastyard"
+        applicationId blastyardAppId
+        resValue "string", "package_name", blastyardAppId
+        resValue "string", "custom_url_scheme", blastyardAppId
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode((System.getenv("VERSION_CODE") ?: "1").toInteger())

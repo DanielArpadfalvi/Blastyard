@@ -1,0 +1,4 @@
+CAPACITOR_DEBUG = true
+
+// BLASTYARD_APP_ID, generated from capacitor.config.ts by `npx cap sync` (scripts/native-config.ts)
+#include? "app-id.xcconfig"
